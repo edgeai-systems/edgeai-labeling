@@ -28,13 +28,20 @@ function showFloatingClass(x, y, onSelect) {
 
   isChoosingClass = true;
 
+  if (lastSelectedClass && classes.includes(lastSelectedClass)) {
+  floatingClass.value = lastSelectedClass;
+} else {
   floatingClass.selectedIndex = -1;
+}
 
 floatingClass.onchange = () => {
   const value = floatingClass.value;
 
   if (value !== "") {
+    lastSelectedClass = value;
+
     onSelect(value);
+
     floatingClass.style.display = "none";
     isChoosingClass = false;
   }
@@ -46,6 +53,7 @@ let displayScale = 1;
 
 // ================= CLASS =================
 let classes = [];
+let lastSelectedClass = null;
 let classColors = {};
 let resizeEdge = null;
 
@@ -206,6 +214,7 @@ function loadImage() {
 
     drawAll();
     loadAnnotations();
+    renderBBoxList();
   };
 }
 
@@ -313,7 +322,8 @@ ctx.fillText(obj.class, dx + 3, dy - 3);
       (y2 - y1) * displayScale
     );
     ctx.setLineDash([]);
-  }
+  };
+  //renderBBoxList();
 }
 
 // ================= MOUSE =================
@@ -521,9 +531,9 @@ canvas.onmouseup = (e) => {
 
   const pos = getMousePos(e);
 
-  // tạo bbox trước
+  // ===== TẠO BOX =====
   const newBox = {
-    class: "",
+    class: lastSelectedClass || "", // 🔥 dùng class gần nhất (nếu có)
     bbox: [startX, startY, pos.x, pos.y]
   };
 
@@ -534,22 +544,25 @@ canvas.onmouseup = (e) => {
   previewBox = null;
 
   drawAll();
+  renderBBoxList();
 
-  // show dropdown
+  // ===== LUÔN HIỆN DROPDOWN (NHƯNG CÓ DEFAULT) =====
   const rect = canvas.getBoundingClientRect();
 
-showFloatingClass(
-  rect.left + e.clientX - rect.left,
-  rect.top + e.clientY - rect.top,
-  (selectedClass) => {
-    newBox.class = selectedClass;
+  showFloatingClass(
+    e.clientX,
+    e.clientY,
+    (selectedClass) => {
+      newBox.class = selectedClass;
 
-    if (window.markDirty) window.markDirty();
+      lastSelectedClass = selectedClass; // 🔥 update memory
 
-    drawAll();
-  }
+      if (window.markDirty) window.markDirty();
 
-);
+      drawAll();
+      renderBBoxList();
+    }
+  );
 };
 
 // ================= EDIT =================
@@ -567,6 +580,7 @@ window.deleteSelected = function () {
     hoveredBoxIndex = -1;
 
     drawAll();
+    renderBBoxList();
   }
 };
 
@@ -585,6 +599,7 @@ window.changeClassSelected = function () {
     hoveredBoxIndex = -1;
 
     drawAll();
+    renderBBoxList();
   }
 };
 
@@ -715,6 +730,7 @@ async function loadAnnotations() {
   annotations[getKey()] = objects;
 
   drawAll();
+  renderBBoxList();
 }
 
 // ================= LOAD PROJECT =================
@@ -896,6 +912,9 @@ window.save = async function () {
 
 // ================= CLASS HIGHLIGHT =================
 const classSelect = document.getElementById("classSelect");
+classSelect.addEventListener("change", () => {
+  lastSelectedClass = classSelect.value;
+});
 
 if (classSelect) {
   classSelect.addEventListener("change", () => {
@@ -957,6 +976,120 @@ document.addEventListener("click", (e) => {
     floatingClass.style.display = "none";
   }
 });
+
+function renderBBoxList() {
+  const list = document.getElementById("bboxList");
+  if (!list) return;
+
+  const objects = getCurrentObjects();
+  list.innerHTML = "";
+
+  objects.forEach((obj, i) => {
+    const item = document.createElement("div");
+    item.className = "bbox-item";
+
+    const isSelected = i === selectedBoxIndex;
+    if (isSelected) item.classList.add("active");
+
+    const color = classColors[obj.class] || "#00ff00";
+
+    // ===== HOVER SIDEBAR → CANVAS =====
+    item.onmouseenter = () => {
+      hoveredBoxIndex = i;
+      drawAll();
+    };
+
+    item.onmouseleave = () => {
+      hoveredBoxIndex = -1;
+      drawAll();
+    };
+
+    // ===== LABEL =====
+    const label = document.createElement("span");
+    label.className = "bbox-label";
+    label.textContent = obj.class;
+
+    // màu giống canvas
+    label.style.background = color;
+    label.style.color = getTextColor(color);
+
+    // ===== EDIT CLASS =====
+    label.onclick = (e) => {
+      e.stopPropagation();
+
+      const select = document.createElement("select");
+
+      classes.forEach(cls => {
+        const opt = document.createElement("option");
+        opt.value = cls;
+        opt.textContent = cls;
+        if (cls === obj.class) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      select.style.background = "#111827";
+      select.style.color = "white";
+      select.style.border = "1px solid #374151";
+      select.style.borderRadius = "4px";
+
+      select.onchange = () => {
+        obj.class = select.value;
+
+        if (window.markDirty) window.markDirty();
+
+        drawAll();
+        renderBBoxList();
+      };
+
+      select.onblur = () => {
+        renderBBoxList();
+      };
+
+      item.replaceChild(select, label);
+      select.focus();
+    };
+
+    // ===== DELETE =====
+    const del = document.createElement("span");
+    del.className = "bbox-del";
+    del.textContent = "✕";
+
+    del.onclick = (e) => {
+      e.stopPropagation();
+
+      objects.splice(i, 1);
+
+      if (window.markDirty) window.markDirty();
+
+      selectedBoxIndex = -1;
+      hoveredBoxIndex = -1;
+
+      drawAll();
+      renderBBoxList();
+    };
+
+    // ===== CLICK → SELECT =====
+    item.onclick = () => {
+      selectedBoxIndex = i;
+      hoveredBoxIndex = i;
+
+      drawAll();
+      renderBBoxList();
+    };
+
+    item.appendChild(label);
+    item.appendChild(del);
+
+    list.appendChild(item);
+
+    // ===== AUTO SCROLL TO SELECT =====
+    if (isSelected) {
+      setTimeout(() => {
+        item.scrollIntoView({ block: "nearest" });
+      }, 0);
+    }
+  });
+}
 
 // ================= INIT =================
 renderClassSelect();
