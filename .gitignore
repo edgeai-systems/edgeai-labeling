@@ -15,6 +15,7 @@ venv/
 # ======================
 # Dataset (IMPORTANT)
 # ======================
+backend/*.zip
 backend/datasets/*
 backend/datasets/images/*
 backend/datasets/labels/*
