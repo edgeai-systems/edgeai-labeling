@@ -162,3 +162,104 @@ button:hover {
 input, select {
   min-height: 30px;
 }
+
+/* ===== LAYOUT 2 CỘT ===== */
+.layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+/* ===== SIDEBAR ===== */
+.bbox-sidebar {
+  width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: rgba(17,24,39,0.95);
+  border: 1px solid #374151;
+  border-radius: 10px;
+  padding: 10px;
+  color: white;
+  font-size: 13px;
+
+  /* 🔥 KHÔNG ĐÈ CANVAS */
+  position: relative;
+}
+
+/* ===== TITLE ===== */
+.bbox-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+
+/* ===== ITEM ===== */
+#bboxList div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #1f2937;
+  transition: 0.15s;
+}
+
+#bboxList div:hover {
+  background: #374151;
+}
+
+/* ===== SELECTED ===== */
+#bboxList div.active {
+  background: #2563eb;
+}
+
+/* ===== DELETE BTN ===== */
+#bboxList span {
+  cursor: pointer;
+  margin-left: 8px;
+  color: #ef4444;
+}
+
+/* ===== CANVAS FIX ===== */
+.canvas-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+/* ===== SIDEBAR ITEM COLOR ===== */
+.bbox-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #1f2937;
+  transition: 0.15s;
+}
+
+/* hover giống canvas */
+.bbox-item:hover {
+  transform: translateX(3px);
+}
+
+/* selected */
+.bbox-item.active {
+  outline: 2px solid #2563eb;
+}
+
+/* label màu */
+.bbox-label {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* delete */
+.bbox-del {
+  color: #ef4444;
+  cursor: pointer;
+}
