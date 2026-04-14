@@ -1,6 +1,46 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+// ===== FLOATING CLASS PICKER =====
+const floatingClass = document.getElementById("floatingClass");
+let isChoosingClass = false;
+
+function showFloatingClass(x, y, onSelect) {
+  floatingClass.innerHTML = "";
+
+  if (!classes || classes.length === 0) {
+    console.warn("NO CLASSES");
+    return;
+  }
+
+  classes.forEach(cls => {
+    const opt = document.createElement("option");
+    opt.value = cls;
+    opt.textContent = cls;
+    floatingClass.appendChild(opt);
+  });
+
+  floatingClass.style.left = x + "px";
+  floatingClass.style.top = y + "px";
+  floatingClass.style.display = "block";
+
+  floatingClass.focus();
+
+  isChoosingClass = true;
+
+  floatingClass.selectedIndex = -1;
+
+floatingClass.onchange = () => {
+  const value = floatingClass.value;
+
+  if (value !== "") {
+    onSelect(value);
+    floatingClass.style.display = "none";
+    isChoosingClass = false;
+  }
+};
+}
+
 // ================= CONFIG =================
 let displayScale = 1;
 
@@ -287,6 +327,11 @@ function getMousePos(e) {
 
 // ================= MOUSE =================
 canvas.onmousedown = (e) => {
+  if (isChoosingClass) return; // 🔥 QUAN TRỌNG
+  if (!classes.length) {
+  alert("Chưa load class!");
+  return;
+}
   if (e.ctrlKey) {
     isPanning = true;
     lastX = e.clientX;
@@ -475,27 +520,36 @@ canvas.onmouseup = (e) => {
   if (!drawing) return;
 
   const pos = getMousePos(e);
-  const cls = document.getElementById("classSelect").value;
 
-  if (!cls) {
-    alert("Chưa có class!");
-    drawing = false;
-    previewBox = null;
-    return;
-  }
-
-  getCurrentObjects().push({
-    class: cls,
+  // tạo bbox trước
+  const newBox = {
+    class: "",
     bbox: [startX, startY, pos.x, pos.y]
-  });
+  };
 
-  // 🔥 QUAN TRỌNG: bật Save
-  if (window.markDirty) window.markDirty();
+  const objects = getCurrentObjects();
+  objects.push(newBox);
 
   drawing = false;
   previewBox = null;
 
   drawAll();
+
+  // show dropdown
+  const rect = canvas.getBoundingClientRect();
+
+showFloatingClass(
+  rect.left + e.clientX - rect.left,
+  rect.top + e.clientY - rect.top,
+  (selectedClass) => {
+    newBox.class = selectedClass;
+
+    if (window.markDirty) window.markDirty();
+
+    drawAll();
+  }
+
+);
 };
 
 // ================= EDIT =================
@@ -682,7 +736,7 @@ window.loadProject = async function () {
   // load images
   await loadImagesFromProject();
 
-  alert("Project loaded!");
+  //alert("Project loaded!");
 };
 
 // ================= NAVIGATION =================
@@ -889,6 +943,19 @@ window.addEventListener("keydown", (e) => {
     prevImage();
   }
 
+});
+
+document.addEventListener("click", (e) => {
+
+  // 🔥 nếu đang chọn class thì bỏ qua click đầu tiên
+  if (isChoosingClass) {
+    isChoosingClass = false;
+    return;
+  }
+
+  if (!floatingClass.contains(e.target)) {
+    floatingClass.style.display = "none";
+  }
 });
 
 // ================= INIT =================

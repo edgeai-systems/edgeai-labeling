@@ -2,6 +2,31 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+// ===== FLOATING CLASS PICKER =====
+const floatingClass = document.getElementById("floatingClass");
+
+function showFloatingClass(x, y, onSelect) {
+  floatingClass.innerHTML = "";
+
+  classes.forEach(cls => {
+    const opt = document.createElement("option");
+    opt.value = cls;
+    opt.textContent = cls;
+    floatingClass.appendChild(opt);
+  });
+
+  floatingClass.style.left = x + "px";
+  floatingClass.style.top = y + "px";
+  floatingClass.style.display = "block";
+
+  floatingClass.focus();
+
+  floatingClass.onchange = () => {
+    onSelect(floatingClass.value);
+    floatingClass.style.display = "none";
+  };
+}
+
 // ================= CONFIG =================
 let displayScale = 1;
 
