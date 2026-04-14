@@ -1,0 +1,164 @@
+body {
+  background: #0b1220;
+  color: #e5e7eb;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 6px;
+  padding-right: 12px;
+  border-right: 1px solid #1f2937;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+}
+
+button {
+  background: #1f2937;
+}
+/* hover */
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+
+/* primary */
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 0 10px rgba(37,99,235,0.6);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+/* danger */
+.btn-danger {
+  background: #dc2626;
+}
+.btn-danger:hover {
+  background: #b91c1c;
+}
+
+/* disabled */
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+input, select {
+  background: #020617;
+  border: 1px solid #374151;
+  color: #e5e7eb;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.canvas-container {
+  padding: 20px;
+  background: radial-gradient(circle at center, #0f172a, #020617);
+}
+
+canvas {
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #000;
+  box-shadow:
+    0 10px 40px rgba(0,0,0,0.6),
+    0 0 0 1px rgba(255,255,255,0.05) inset;
+}
+
+.sidebar {
+  width: 200px;
+  background: #111827;
+  border-right: 1px solid #1f2937;
+  padding: 10px;
+}
+
+.class-item {
+  padding: 6px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.class-item.active {
+  background: #2563eb;
+}
+
+.right-panel {
+  width: 220px;
+  background: #111827;
+  border-left: 1px solid #1f2937;
+  padding: 10px;
+}
+
+/* ===== LAYOUT PRO ===== */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(17,24,39,0.75);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #1f2937;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ===== CANVAS CENTER ===== */
+.canvas-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+/* ===== BUTTON NICE ===== */
+button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #e5e7eb;
+  transition: all 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ===== PRIMARY ===== */
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 0 10px rgba(37,99,235,0.5);
+}
+
+/* ===== DANGER ===== */
+.btn-danger {
+  background: #dc2626;
+}
+
+/* ===== INPUT FIX ===== */
+input, select {
+  min-height: 30px;
+}

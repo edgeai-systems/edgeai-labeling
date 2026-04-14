@@ -15,10 +15,12 @@ venv/
 # ======================
 # Dataset (IMPORTANT)
 # ======================
+backend/datasets/*
 backend/datasets/images/*
 backend/datasets/labels/*
 !backend/datasets/images/.keep
 !backend/datasets/labels/.keep
+
 
 # ======================
 # Models

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8">
+  <title>EdgeAI Labeling</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+
+    <div class="toolbar-group">
+      <select id="projectSelect"></select>
+      <button onclick="loadProject()">Load</button>
+      <input id="projectName" placeholder="Project name" />
+      <button onclick="createProject()">Create</button>
+    </div>
+
+    <div class="toolbar-group">
+      <input type="file" id="folderInput" webkitdirectory multiple />
+      <button onclick="uploadFolder()">Upload</button>
+    </div>
+
+    <div class="toolbar-group">
+      <select id="classSelect"></select>
+      <input id="newClass" placeholder="New class..." />
+      <button onclick="addClass()">Add</button>
+      <button onclick="changeClassSelected()">Change</button>
+      <button class="btn-danger" onclick="deleteSelected()">Delete</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button onclick="prevImage()">Prev</button>
+      <button onclick="nextImage()">Next</button>
+      <button onclick="autoDetect()">Auto</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button class="btn-primary" onclick="save()">Save</button>
+      <button onclick="resetView()">Reset</button>
+      <button onclick="clearLast()">Undo</button>
+      <button class="btn-primary" onclick="exportDataset()">Export</button>
+    </div>
+
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="canvas-container">
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<select id="floatingClass"
+  style="
+    position: absolute;
+    display: none;
+    z-index: 999;
+    background: #111827;
+    color: white;
+    border: 1px solid #374151;
+    padding: 4px;
+    border-radius: 6px;
+  ">
+</select>
+
+<script src="/static/src/app.js"></script>
+</body>
+</html>
