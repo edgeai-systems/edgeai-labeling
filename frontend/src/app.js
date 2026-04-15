@@ -11,6 +11,8 @@ let selectedBatch = "all";
 let currentImage = null;
 let mouseX = null;
 let mouseY = null;
+let autoModelConfirmed = false;
+let lastModel = null;
 
 function onBatchChange(batch) {
   selectedBatch = batch;
@@ -971,6 +973,36 @@ async function loadProjectList() {
   });
 }
 
+async function loadModels() {
+  try {
+    const res = await fetch("/models");
+    const models = await res.json();
+
+    const select = document.getElementById("modelSelect");
+    if (!select) return;
+
+    select.innerHTML = "";
+
+    if (!models.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.innerText = "No model";
+      select.appendChild(opt);
+      return;
+    }
+
+    models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.innerText = m;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    console.error("Load models error:", err);
+  }
+}
+
 async function loadAnnotations() {
   if (!currentProject) return;
   if (!currentImage) return;
@@ -1497,8 +1529,122 @@ function renderPagination(total) {
   }
 }
 
+window.autoDetect = async function () {
+  if (!currentImage) return;
+
+  const model = document.getElementById("modelSelect").value;
+
+// 🔥 nếu đổi model → reset confirm
+if (model !== lastModel) {
+  autoModelConfirmed = false;
+  lastModel = model;
+}
+
+// 🔥 confirm
+if (!autoModelConfirmed) {
+  const ok = confirm(`Đang dùng model: ${model}\nXác nhận chạy AUTO?`);
+  if (!ok) return;
+
+  autoModelConfirmed = true;
+}
+
+  try {
+    // ===== LOAD IMAGE =====
+    const res = await fetch(currentImage);
+    const blob = await res.blob();
+
+    const formData = new FormData();
+    formData.append("file", blob, "image.jpg");
+    formData.append("model", model);
+
+    // ===== CALL API =====
+    const response = await fetch("/auto_detect", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+
+    const objects = getCurrentObjects();
+
+    // ===== SET / MERGE CLASSES =====
+    if (!classes || classes.length === 0) {
+      classes = data.classes || [];
+    } else {
+      (data.classes || []).forEach(c => {
+        if (!classes.includes(c)) {
+          classes.push(c);
+        }
+      });
+    }
+    renderClassSelect();
+
+    // ===== ADD DETECTIONS =====
+    (data.detections || []).forEach(det => {
+      objects.push({
+        class: det.class,
+        bbox: det.bbox
+      });
+    });
+
+    // ===== UPDATE UI =====
+    updateImageMeta();
+
+    // 🔥 QUAN TRỌNG NHẤT
+    if (window.markDirty) window.markDirty();
+
+    drawAll();
+    renderBBoxList();
+
+  } catch (err) {
+    console.error("Auto detect error:", err);
+    alert("Auto detect lỗi");
+  }
+};
+
+window.uploadModel = async function () {
+  const input = document.getElementById("modelUpload");
+
+  input.click();
+
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".pt")) {
+      alert("Chỉ upload file .pt");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/upload_model", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (data.status === "uploaded") {
+        alert("Upload model OK: " + data.model);
+
+        // 🔥 reload dropdown
+        loadModels();
+      } else {
+        alert(data.msg);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert("Upload lỗi");
+    }
+  };
+};
 
 // ================= INIT =================
 renderClassSelect();
 loadProjectList();
+loadModels(); // 🔥 THÊM DÒNG NÀY
 loadAnnotations();
