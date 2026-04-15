@@ -51,6 +51,17 @@ async def upload(project: str, batch: int = Form(0), files: list[UploadFile] = F
         filename = os.path.basename(file.filename)
         file_path = os.path.join(project_path, filename)
 
+        skip = False
+
+        for root, _, files in os.walk(os.path.join(BASE_DIR, project)):
+            if filename in files:
+                print("Skip duplicate:", filename)
+                skip = True
+                break
+
+        if skip:
+            continue
+
         with open(file_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
@@ -200,42 +211,93 @@ async def get_annotations(project: str, image: str):
 @app.get("/export")
 async def export(project: str):
     project_path = os.path.join(BASE_DIR, project)
+
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    zip_name = f"{project}_{now}.zip"
-    zip_path = os.path.join(BASE_DIR, zip_name)
+    export_dir = os.path.join(BASE_DIR, f"{project}_{now}")
 
-    label_dir = os.path.join(project_path, "labels")
+    images_out = os.path.join(export_dir, "images")
+    labels_out = os.path.join(export_dir, "labels")
 
-    # ================= LOAD CLASS NAMES =================
+    os.makedirs(images_out, exist_ok=True)
+    os.makedirs(labels_out, exist_ok=True)
+
+    used_names = set()
+
+    # ===== LOAD CLASSES =====
     class_file = os.path.join(project_path, "classes.json")
-
     if os.path.exists(class_file):
         with open(class_file, "r") as f:
             class_names = json.load(f)
     else:
         class_names = []
 
-    # ================= CREATE ZIP =================
+    # ===== DUYỆT TẤT CẢ BATCH =====
+    for root, _, files in os.walk(project_path):
+        if "images" not in root:
+            continue
+
+        for f in files:
+            if not f.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+
+            img_path = os.path.join(root, f)
+
+            label_name = os.path.splitext(f)[0] + ".txt"
+            label_path = None
+
+            for r, _, fs in os.walk(project_path):
+                if "labels" in r and label_name in fs:
+                    label_path = os.path.join(r, label_name)
+                    break
+
+            if not label_path:
+                continue
+
+            # 👉 chỉ export ảnh có label
+            if not os.path.exists(label_path):
+                continue
+
+            if os.path.getsize(label_path) == 0:
+                continue
+
+            # ===== TRÁNH TRÙNG TÊN =====
+            name, ext = os.path.splitext(f)
+            new_name = f
+            i = 1
+
+            while new_name in used_names:
+                new_name = f"{name}_{i}{ext}"
+                i += 1
+
+            used_names.add(new_name)
+
+            # ===== COPY IMAGE =====
+            shutil.copy(img_path, os.path.join(images_out, new_name))
+
+            # ===== COPY LABEL =====
+            new_label = new_name.rsplit(".", 1)[0] + ".txt"
+            shutil.copy(label_path, os.path.join(labels_out, new_label))
+
+    # ===== classes.txt =====
+    with open(os.path.join(export_dir, "classes.txt"), "w") as f:
+        f.write("\n".join(class_names))
+
+    # ===== data.yaml =====
+    with open(os.path.join(export_dir, "data.yaml"), "w") as f:
+        f.write(f"path: .\n")
+        f.write(f"train: images\n")
+        f.write(f"val: images\n\n")
+        f.write(f"nc: {len(class_names)}\n")
+        f.write(f"names: {json.dumps(class_names)}\n")
+
+    # ===== ZIP =====
+    zip_path = export_dir + ".zip"
+
     with zipfile.ZipFile(zip_path, "w") as z:
-
-        # add images + labels
-        for root, _, files in os.walk(project_path):
+        for root, _, files in os.walk(export_dir):
             for f in files:
-                full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, project_path)
-                z.write(full_path, rel_path)
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, export_dir)
+                z.write(full, rel)
 
-        # ================= classes.txt =================
-        z.writestr("classes.txt", "\n".join(class_names))
-
-        # ================= data.yaml =================
-        yaml_content = f"""
-train: images
-val: images
-
-nc: {len(class_names)}
-names: {class_names}
-"""
-        z.writestr("data.yaml", yaml_content.strip())
-
-    return FileResponse(zip_path, filename=zip_name)
+    return FileResponse(zip_path, filename=os.path.basename(zip_path))
