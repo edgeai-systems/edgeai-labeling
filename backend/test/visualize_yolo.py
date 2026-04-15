@@ -3,9 +3,9 @@ import cv2
 import json
 
 # ================= CONFIG =================
-BASE_PATH = "../datasets/test1"
+BASE_PATH = "../datasets/plate_ocr"
 
-IMAGE_DIR = os.path.join(BASE_PATH, "images")
+IMAGE_DIR = os.path.join(BASE_PATH, "batch_0/images")
 LABEL_DIR = os.path.join(BASE_PATH, "labels")
 
 MAX_W = 1200
@@ -107,7 +107,7 @@ def draw_yolo(image_path, label_path):
             label = str(cls_id)
 
         # 🔥 FONT SCALE SAU KHI SCALE ẢNH
-        font_scale = 0.6
+        font_scale = 4
 
         text_x = x1
         text_y = y1 - 5 if y1 > 20 else y2 + 20
@@ -120,7 +120,7 @@ def draw_yolo(image_path, label_path):
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             (0,0,0),
-            3
+            10
         )
 
         # chữ màu

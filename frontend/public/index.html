@@ -51,6 +51,9 @@
 <button class="filter-btn" id="btnLabeled" onclick="setFilter('labeled', this)">Labeled</button>
 <button class="filter-btn" id="btnUnlabeled" onclick="setFilter('unlabeled', this)">Unlabeled</button>
      <span id="imageCounter" style="margin-left:10px;"></span>
+     <select id="batchSelect" onchange="onBatchChange(this.value)" style="margin-left:10px;">
+  <option value="all">All batch</option>
+</select>
 </div>
 
   </div>
