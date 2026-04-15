@@ -8,6 +8,7 @@ let viewMode = "single"; // single | grid
 let currentPage = 1;
 const PAGE_SIZE = 9;
 let selectedBatch = "all";
+let currentImage = null;
 
 function onBatchChange(batch) {
   selectedBatch = batch;
@@ -198,26 +199,27 @@ function getFilteredImages() {
 
   // ===== FILTER BATCH =====
   if (selectedBatch !== "all") {
-    list = list.filter(img => img.includes(selectedBatch));
+    list = list.filter(img => img.includes(`/${selectedBatch}/`));
   }
 
-  // ===== FILTER MODE =====
+  // ===== FILTER MODE (DÙNG imageMeta - CHUẨN) =====
   if (filterMode === "labeled") {
     list = list.filter(img => {
-      const objs = annotations[img] || [];
-      return objs.length > 0;
+      const meta = imageMeta.find(m => `/datasets/${m.path}` === img);
+      return meta && meta.labeled;
     });
   }
 
   if (filterMode === "unlabeled") {
     list = list.filter(img => {
-      const objs = annotations[img] || [];
-      return objs.length === 0;
+      const meta = imageMeta.find(m => `/datasets/${m.path}` === img);
+      return !meta || !meta.labeled;
     });
   }
 
   return list;
 }
+
 window.setFilter = function(mode, el) {
   filterMode = mode;
 
@@ -264,13 +266,17 @@ window.setFilter = function(mode, el) {
 };
 // ================= UTILS =================
 function getKey() {
-  return images[index];
+  return currentImage;
 }
 
 function getCurrentObjects() {
-  const key = getKey();
-  if (!annotations[key]) annotations[key] = [];
-  return annotations[key];
+  if (!currentImage) return [];
+
+  if (!annotations[currentImage]) {
+    annotations[currentImage] = [];
+  }
+
+  return annotations[currentImage];
 }
 
 function isInsideBox(x, y, box) {
@@ -306,14 +312,15 @@ function getEdge(x, y, box) {
 
 // ================= LOAD IMAGE =================
 function loadImage() {
-  const list = getFilteredImages(); // 🔥 FIX
+  const list = getFilteredImages();
 
   if (!list.length) return;
 
-  // 🔥 đảm bảo index hợp lệ
-  if (index >= list.length) index = 0;
+  if (index < 0 || index >= list.length) index = 0;
 
-  const imgPath = list[index]; // 🔥 FIX
+  const imgPath = list[index];
+
+  currentImage = imgPath; // 🔥 CHỐT KEY
 
   img.src = imgPath;
 
@@ -335,11 +342,10 @@ function loadImage() {
     drawAll();
     loadAnnotations();
     renderBBoxList();
-
-    // 🔥 cập nhật counter luôn cho khớp
     updateImageCounter();
   };
 }
+
 // ================= DRAW =================
 function drawAll() {
   ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
@@ -649,12 +655,10 @@ canvas.onmouseup = (e) => {
     return;
   }
 
-  // ❌ KHÔNG DÙNG drawing nữa
   if (!previewBox) return;
 
   const pos = getMousePos(e);
 
-  // tránh click nhầm
   const dx = Math.abs(pos.x - startX);
   const dy = Math.abs(pos.y - startY);
   if (dx < 2 && dy < 2) {
@@ -662,11 +666,10 @@ canvas.onmouseup = (e) => {
     return;
   }
 
-  // ===== TẠO BOX =====
- const newBox = {
-  class: lastSelectedClass || "", // 🔥 FIX CHÍNH
-  bbox: [startX, startY, pos.x, pos.y]
-};
+  const newBox = {
+    class: lastSelectedClass || "",
+    bbox: [startX, startY, pos.x, pos.y]
+  };
 
   const objects = getCurrentObjects();
   objects.push(newBox);
@@ -674,30 +677,30 @@ canvas.onmouseup = (e) => {
   drawing = false;
   previewBox = null;
 
-// 🔥 luôn update trước
-if (window.markDirty) window.markDirty();
-drawAll();
-renderBBoxList();
-
-showFloatingClass(
-  e.clientX,
-  e.clientY,
-  (selectedClass) => {
-    newBox.class = selectedClass;
-
-    lastSelectedClass = selectedClass;
-
-    if (window.markDirty) window.markDirty();
-
-    drawAll();
-    renderBBoxList();
-  }
-);
+  if (window.markDirty) window.markDirty();
 
   drawAll();
   renderBBoxList();
 
+  // ===== UPDATE META =====
+  updateImageMeta();
 
+  // ===== CLASS PICK =====
+  showFloatingClass(
+    e.clientX,
+    e.clientY,
+    (selectedClass) => {
+      newBox.class = selectedClass;
+      lastSelectedClass = selectedClass;
+
+      updateImageMeta(); // 🔥 FIX CHÍNH
+
+      if (window.markDirty) window.markDirty();
+
+      drawAll();
+      renderBBoxList();
+    }
+  );
 };
 
 // ================= EDIT =================
@@ -762,14 +765,25 @@ canvas.addEventListener("wheel", (e) => {
 // ================= SAVE =================
 window.save = async function () {
   const objects = getCurrentObjects();
-  if (!objects.length) return;
+
+  if (!objects || !objects.length) return;
+
+  const currentPath = getKey();
+
+  // 🔥 FIX CHỐNG CRASH
+  if (!currentPath) {
+    console.warn("Save skipped: no image");
+    return;
+  }
+
+  const imageName = currentPath.split("/").pop();
 
   await fetch(`/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       project: currentProject,
-      image: images[index].split("/").pop(),
+      image: imageName,
       objects,
       classes,
       width: img.width,
@@ -933,9 +947,10 @@ async function loadProjectList() {
 }
 
 async function loadAnnotations() {
-  if (!currentProject || !images.length) return;
+  if (!currentProject) return;
+  if (!currentImage) return;
 
-  const imageName = images[index].split("/").pop();
+  const imageName = currentImage.split("/").pop();
 
   const res = await fetch(`/annotations?project=${currentProject}&image=${imageName}`);
   const data = await res.json();
@@ -945,7 +960,6 @@ async function loadAnnotations() {
   data.forEach(obj => {
     const [xc, yc, w, h] = obj.bbox;
 
-    // convert YOLO → pixel
     const x1 = (xc - w/2) * img.width;
     const y1 = (yc - h/2) * img.height;
     const x2 = (xc + w/2) * img.width;
@@ -957,12 +971,12 @@ async function loadAnnotations() {
     });
   });
 
-  annotations[getKey()] = objects;
+  annotations[currentImage] = objects; // 🔥 KEY ỔN ĐỊNH
 
+  updateImageMeta();
   drawAll();
   renderBBoxList();
 }
-
 // ================= LOAD PROJECT =================
 window.loadProject = async function () {
   const select = document.getElementById("projectSelect");
@@ -988,29 +1002,26 @@ window.loadProject = async function () {
 // ================= NAVIGATION =================
 window.nextImage = function () {
   const list = getFilteredImages();
-
   if (!list.length) return;
 
-  save();
+  if (getKey()) save();
 
-  index = (index + 1) % list.length; // 🔥 dùng index trực tiếp theo list
+  index = (index + 1) % list.length;
 
   loadImage();
-  updateImageCounter();
 };
 
 window.prevImage = function () {
   const list = getFilteredImages();
-
   if (!list.length) return;
 
-  save();
+  if (getKey()) save();
 
-  index = (index - 1 + list.length) % list.length; // 🔥
+  index = (index - 1 + list.length) % list.length;
 
   loadImage();
-  updateImageCounter();
 };
+
 window.resetView = function () {
   scale = 1;
   offsetX = 0;
@@ -1207,15 +1218,26 @@ document.addEventListener("click", (e) => {
     floatingClass.style.display = "none";
   }
 });
+
 function updateImageMeta() {
-  const currentPath = getKey().replace("/datasets/", "");
-  const meta = imageMeta.find(m => m.path === currentPath);
+  const key = getKey();
+
+  // 🔥 FIX CHỐNG CRASH
+  if (!key) return;
+
+  const currentPath = key.replace("/datasets/", "");
+
+  const meta = imageMeta.find(m => currentPath.endsWith(m.path));
 
   if (meta) {
     const objects = getCurrentObjects();
-    meta.count = objects.length;
-    meta.labeled = objects.length > 0;
+
+    const valid = objects.filter(o => o.class);
+
+    meta.count = valid.length;
+    meta.labeled = valid.length > 0;
   }
+
   updateFilterCount();
 }
 
@@ -1227,13 +1249,12 @@ function updateImageCounter() {
     return;
   }
 
-  let current = images[index];
-  let i = list.indexOf(current);
+  const current = list[index];
 
-  // 🔥 FIX: nếu current không nằm trong list → reset
-  if (i === -1) {
+  let i = index;
+
+  if (i < 0 || i >= list.length) {
     index = 0;
-    current = list[0];
     i = 0;
   }
 
@@ -1368,12 +1389,8 @@ function renderBBoxList() {
 function updateFilterCount() {
   let list = imageMeta;
 
-  // ===== FILTER BATCH (CHUẨN) =====
   if (selectedBatch !== "all") {
-    list = list.filter(m => {
-      const parts = m.path.split("/");
-      return parts[1] === selectedBatch; // 🔥 CHÍNH XÁC
-    });
+    list = list.filter(m => m.path.includes(`/${selectedBatch}/`)); // 🔥 CHUẨN NHẤT
   }
 
   const total = list.length;
@@ -1398,37 +1415,30 @@ function renderGrid() {
 
   grid.innerHTML = "";
 
-  pageItems.forEach(imgPath => {
+  pageItems.forEach((imgPath, idx) => {
     const div = document.createElement("div");
     div.className = "grid-item";
 
-    // ✅ FIX LABELED
     const meta = imageMeta.find(m => `/datasets/${m.path}` === imgPath);
 
-    if (meta && meta.labeled) {
-      div.classList.add("labeled");
-    } else {
-      div.classList.add("unlabeled");
-    }
+    div.classList.add(meta && meta.labeled ? "labeled" : "unlabeled");
 
     const imgEl = document.createElement("img");
     imgEl.src = imgPath;
 
     div.appendChild(imgEl);
 
-    // click → quay về annotate
     div.onclick = () => {
       viewMode = "single";
 
       document.getElementById("canvas").style.display = "block";
       grid.style.display = "none";
       pagination.style.display = "none";
-
       document.getElementById("bboxSidebar").style.display = "block";
 
-      index = images.indexOf(imgPath);
+      index = start + idx; // 🔥 CHUẨN
+
       loadImage();
-      updateImageCounter();
     };
 
     grid.appendChild(div);
@@ -1437,6 +1447,7 @@ function renderGrid() {
   renderPagination(list.length);
   pagination.style.display = "flex";
 }
+
 
 function renderPagination(total) {
   const pagination = document.getElementById("pagination");
