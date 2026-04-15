@@ -2,11 +2,15 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from fastapi import Form
+
 import os
 import zipfile
 import shutil
 import json
 from datetime import datetime
+
+ALLOWED_EXT = [".jpg", ".jpeg", ".png"]
 
 app = FastAPI()
 
@@ -34,12 +38,17 @@ async def create_project(name: str):
 
 # ================= UPLOAD =================
 @app.post("/upload")
-async def upload(project: str, files: list[UploadFile] = File(...)):
-    project_path = os.path.join(BASE_DIR, project, "images")
+async def upload(project: str, batch: int = Form(0), files: list[UploadFile] = File(...)):
+    project_path = os.path.join(BASE_DIR, project, f"batch_{batch}", "images")
     os.makedirs(project_path, exist_ok=True)
 
     for file in files:
-        filename = os.path.basename(file.filename)  # FIX path
+        ext = os.path.splitext(file.filename)[1].lower()
+
+        if ext not in ALLOWED_EXT:
+            continue  # bỏ qua file không hợp lệ
+
+        filename = os.path.basename(file.filename)
         file_path = os.path.join(project_path, filename)
 
         with open(file_path, "wb") as f:
@@ -50,12 +59,33 @@ async def upload(project: str, files: list[UploadFile] = File(...)):
 # ================= LIST IMAGES =================
 @app.get("/images")
 async def list_images(project: str):
-    folder = os.path.join(BASE_DIR, project, "images")
+    project_path = os.path.join(BASE_DIR, project)
 
-    if not os.path.exists(folder):
-        return []
+    result = []
 
-    return os.listdir(folder)
+    for root, _, files in os.walk(project_path):
+        if "images" in root:
+            for f in files:
+
+                # 🔥 chỉ lấy file ảnh
+                if not f.lower().endswith((".jpg", ".jpeg", ".png")):
+                    continue
+
+                full_path = os.path.join(root, f)
+
+                # 👉 path dùng cho frontend
+                rel_path = full_path.replace(BASE_DIR + os.sep, "").replace("\\", "/")
+
+                # 👉 check label tồn tại
+                label_name = os.path.splitext(f)[0] + ".txt"
+                label_path = os.path.join(project_path, "labels", label_name)
+
+                result.append({
+                    "path": rel_path,
+                    "labeled": os.path.exists(label_path)
+                })
+
+    return result
 
 # ================= SAVE =================
 class SaveRequest(BaseModel):
