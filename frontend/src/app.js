@@ -9,6 +9,8 @@ let currentPage = 1;
 const PAGE_SIZE = 9;
 let selectedBatch = "all";
 let currentImage = null;
+let mouseX = null;
+let mouseY = null;
 
 function onBatchChange(batch) {
   selectedBatch = batch;
@@ -452,6 +454,38 @@ ctx.fillText(obj.class, dx + 3, dy - 3);
     ctx.setLineDash([]);
   };
   //renderBBoxList();
+  // ===== CROSSHAIR =====
+if (mouseX !== null && mouseY !== null) {
+  ctx.save();
+
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(120,120,120,0.9)";
+  ctx.lineWidth = 1.5;
+
+  const x = mouseX * displayScale;
+  const y = mouseY * displayScale;
+
+  // vertical
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, canvas.height);
+  ctx.stroke();
+
+  // horizontal
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(canvas.width, y);
+  ctx.stroke();
+
+  // điểm giao
+  ctx.beginPath();
+  ctx.arc(x, y, 2, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+
+  ctx.setLineDash([]);
+  ctx.restore();
+}
 }
 
 // ================= MOUSE =================
@@ -538,6 +572,12 @@ canvas.onmousedown = (e) => {
 
 
 canvas.onmousemove = (e) => {
+  const pos = getMousePos(e);
+
+  // 🔥 UPDATE CROSSHAIR
+  mouseX = pos.x;
+  mouseY = pos.y;
+
   if (isPanning) {
     offsetX += (e.clientX - lastX);
     offsetY += (e.clientY - lastY);
@@ -549,7 +589,6 @@ canvas.onmousemove = (e) => {
 
   // ===== MOVE =====
   if (isDraggingBox && selectedBoxIndex !== -1) {
-    const pos = getMousePos(e);
     const box = getCurrentObjects()[selectedBoxIndex].bbox;
 
     const w = box[2] - box[0];
@@ -564,81 +603,67 @@ canvas.onmousemove = (e) => {
     return;
   }
 
+  // ===== RESIZE =====
+  if (isResizing && selectedBoxIndex !== -1) {
+    const box = getCurrentObjects()[selectedBoxIndex].bbox;
 
-// ===== RESIZE (FIX CHUẨN) =====
-if (isResizing && selectedBoxIndex !== -1) {
-  const pos = getMousePos(e);
-  const box = getCurrentObjects()[selectedBoxIndex].bbox;
+    let [x1, y1, x2, y2] = box;
 
-  let [x1, y1, x2, y2] = box;
+    if (resizeCorner === "tl") { x1 = pos.x; y1 = pos.y; }
+    else if (resizeCorner === "tr") { x2 = pos.x; y1 = pos.y; }
+    else if (resizeCorner === "bl") { x1 = pos.x; y2 = pos.y; }
+    else if (resizeCorner === "br") { x2 = pos.x; y2 = pos.y; }
 
-  // ===== CORNER =====
-  if (resizeCorner === "tl") {
-    x1 = pos.x; y1 = pos.y;
+    if (resizeEdge === "left") x1 = pos.x;
+    if (resizeEdge === "right") x2 = pos.x;
+    if (resizeEdge === "top") y1 = pos.y;
+    if (resizeEdge === "bottom") y2 = pos.y;
+
+    if (x1 > x2) [x1, x2] = [x2, x1];
+    if (y1 > y2) [y1, y2] = [y2, y1];
+
+    box[0] = x1;
+    box[1] = y1;
+    box[2] = x2;
+    box[3] = y2;
+
+    drawAll();
+    return;
   }
-  else if (resizeCorner === "tr") {
-    x2 = pos.x; y1 = pos.y;
-  }
-  else if (resizeCorner === "bl") {
-    x1 = pos.x; y2 = pos.y;
-  }
-  else if (resizeCorner === "br") {
-    x2 = pos.x; y2 = pos.y;
-  }
 
-  // ===== EDGE =====
-  if (resizeEdge === "left") x1 = pos.x;
-  if (resizeEdge === "right") x2 = pos.x;
-  if (resizeEdge === "top") y1 = pos.y;
-  if (resizeEdge === "bottom") y2 = pos.y;
-
-  // normalize
-  if (x1 > x2) [x1, x2] = [x2, x1];
-  if (y1 > y2) [y1, y2] = [y2, y1];
-
-  box[0] = x1;
-  box[1] = y1;
-  box[2] = x2;
-  box[3] = y2;
-
-  drawAll();
-  return;
-}
-
+  // ===== DRAW =====
   if (drawing) {
-    const pos = getMousePos(e);
     previewBox = [startX, startY, pos.x, pos.y];
     drawAll();
     return;
   }
 
   // ===== HOVER =====
-  const pos = getMousePos(e);
-const objects = getCurrentObjects();
+  const objects = getCurrentObjects();
 
-hoveredBoxIndex = -1;
-let cursor = "crosshair";
+  hoveredBoxIndex = -1;
+  let cursor = "crosshair";
 
-for (let i = objects.length - 1; i >= 0; i--) {
-  const box = objects[i].bbox;
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const box = objects[i].bbox;
 
-  if (isInsideBox(pos.x, pos.y, box)) {
-    hoveredBoxIndex = i;
+    if (isInsideBox(pos.x, pos.y, box)) {
+      hoveredBoxIndex = i;
 
-    const corner = getCorner(pos.x, pos.y, box);
-    const edge = getEdge(pos.x, pos.y, box);
+      const corner = getCorner(pos.x, pos.y, box);
+      const edge = getEdge(pos.x, pos.y, box);
 
-    if (corner === "tl" || corner === "br") cursor = "nwse-resize";
-    else if (corner === "tr" || corner === "bl") cursor = "nesw-resize";
-    else if (edge === "left" || edge === "right") cursor = "ew-resize";
-    else if (edge === "top" || edge === "bottom") cursor = "ns-resize";
-    else cursor = "move";
+      if (corner === "tl" || corner === "br") cursor = "nwse-resize";
+      else if (corner === "tr" || corner === "bl") cursor = "nesw-resize";
+      else if (edge === "left" || edge === "right") cursor = "ew-resize";
+      else if (edge === "top" || edge === "bottom") cursor = "ns-resize";
+      else cursor = "move";
 
-    break;
+      break;
+    }
   }
-}
 
-canvas.style.cursor = cursor;
+  canvas.style.cursor = cursor;
 
   drawAll();
 };
