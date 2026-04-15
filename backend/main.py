@@ -18,7 +18,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="../frontend"), name="static")
 app.mount("/datasets", StaticFiles(directory="datasets"), name="datasets")
 
-BASE_DIR = "datasets"
+BASE_DIR = os.path.join(os.path.dirname(__file__), "datasets")
 os.makedirs(BASE_DIR, exist_ok=True)
 
 # ================= ROOT =================
@@ -195,6 +195,21 @@ async def get_classes(project: str):
             return json.load(f)
 
     return []
+
+@app.get("/batches")
+def list_batches(project: str):
+    project_path = os.path.join(BASE_DIR, project)
+
+    if not os.path.exists(project_path):
+        print("Project path not found:", project_path)
+        return []
+
+    batches = [
+        d for d in os.listdir(project_path)
+        if d.startswith("batch_") and os.path.isdir(os.path.join(project_path, d))
+    ]
+
+    return sorted(batches)
 
 @app.get("/annotations")
 async def get_annotations(project: str, image: str):

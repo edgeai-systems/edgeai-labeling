@@ -7,7 +7,22 @@ let isChoosingClass = false;
 let viewMode = "single"; // single | grid
 let currentPage = 1;
 const PAGE_SIZE = 9;
+let selectedBatch = "all";
 
+function onBatchChange(batch) {
+  selectedBatch = batch;
+
+  index = 0; // 🔥 QUAN TRỌNG
+
+  if (viewMode === "grid") {
+    renderGrid();
+  } else {
+    loadImage();
+  }
+
+  updateFilterCount();
+  updateImageCounter();
+}
 function showFloatingClass(x, y, onSelect) {
   floatingClass.innerHTML = "";
 
@@ -179,15 +194,30 @@ let resizeCorner = null;
 let filterMode = "all"; // all | labeled | unlabeled
 
 function getFilteredImages() {
-  return imageMeta
-    .filter(item => {
-      if (filterMode === "labeled") return item.labeled;
-      if (filterMode === "unlabeled") return !item.labeled;
-      return true;
-    })
-    .map(item => `/datasets/${item.path}`);
-}
+  let list = images;
 
+  // ===== FILTER BATCH =====
+  if (selectedBatch !== "all") {
+    list = list.filter(img => img.includes(selectedBatch));
+  }
+
+  // ===== FILTER MODE =====
+  if (filterMode === "labeled") {
+    list = list.filter(img => {
+      const objs = annotations[img] || [];
+      return objs.length > 0;
+    });
+  }
+
+  if (filterMode === "unlabeled") {
+    list = list.filter(img => {
+      const objs = annotations[img] || [];
+      return objs.length === 0;
+    });
+  }
+
+  return list;
+}
 window.setFilter = function(mode, el) {
   filterMode = mode;
 
@@ -276,9 +306,16 @@ function getEdge(x, y, box) {
 
 // ================= LOAD IMAGE =================
 function loadImage() {
-  if (!images.length) return;
+  const list = getFilteredImages(); // 🔥 FIX
 
-  img.src = images[index];
+  if (!list.length) return;
+
+  // 🔥 đảm bảo index hợp lệ
+  if (index >= list.length) index = 0;
+
+  const imgPath = list[index]; // 🔥 FIX
+
+  img.src = imgPath;
 
   img.onload = () => {
     const maxW = window.innerWidth * 0.8;
@@ -298,9 +335,11 @@ function loadImage() {
     drawAll();
     loadAnnotations();
     renderBBoxList();
+
+    // 🔥 cập nhật counter luôn cho khớp
+    updateImageCounter();
   };
 }
-
 // ================= DRAW =================
 function drawAll() {
   ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
@@ -809,6 +848,23 @@ async function loadProjects() {
   }
 }
 
+async function loadBatches() {
+  if (!currentProject) return;
+
+  const res = await fetch(`/batches?project=${currentProject}`);
+  const batches = await res.json();
+
+  const select = document.getElementById("batchSelect");
+  select.innerHTML = '<option value="all">All batch</option>';
+
+  batches.forEach(b => {
+    const opt = document.createElement("option");
+    opt.value = b;
+    opt.textContent = b;
+    select.appendChild(opt);
+  });
+}
+
 window.uploadFolder = async function () {
   if (!currentProject) return alert("Tạo project trước!");
 
@@ -838,6 +894,7 @@ window.uploadFolder = async function () {
 };
 
 async function loadImagesFromProject() {
+  await loadBatches();
   const res = await fetch(`/images?project=${currentProject}`);
   const data = await res.json();
 
@@ -931,32 +988,29 @@ window.loadProject = async function () {
 // ================= NAVIGATION =================
 window.nextImage = function () {
   const list = getFilteredImages();
-  const current = images[index];
-  let i = list.indexOf(current);
 
-  if (i < list.length - 1) {
-    save();
-    const next = list[i + 1];
-    index = images.indexOf(next);
-    loadImage();
-    updateImageCounter();
-  }
+  if (!list.length) return;
+
+  save();
+
+  index = (index + 1) % list.length; // 🔥 dùng index trực tiếp theo list
+
+  loadImage();
+  updateImageCounter();
 };
 
 window.prevImage = function () {
   const list = getFilteredImages();
-  const current = images[index];
-  let i = list.indexOf(current);
 
-  if (i > 0) {
-    save();
-    const prev = list[i - 1];
-    index = images.indexOf(prev);
-    loadImage();
-    updateImageCounter();
-  }
+  if (!list.length) return;
+
+  save();
+
+  index = (index - 1 + list.length) % list.length; // 🔥
+
+  loadImage();
+  updateImageCounter();
 };
-
 window.resetView = function () {
   scale = 1;
   offsetX = 0;
@@ -1168,13 +1222,23 @@ function updateImageMeta() {
 function updateImageCounter() {
   const list = getFilteredImages();
 
-  const current = images[index];
-  const i = list.indexOf(current);
+  if (!list.length) {
+    document.getElementById("imageCounter").innerText = "0 / 0";
+    return;
+  }
 
-  const currentIndex = i >= 0 ? i + 1 : 0;
+  let current = images[index];
+  let i = list.indexOf(current);
+
+  // 🔥 FIX: nếu current không nằm trong list → reset
+  if (i === -1) {
+    index = 0;
+    current = list[0];
+    i = 0;
+  }
 
   document.getElementById("imageCounter").innerText =
-    `${currentIndex} / ${list.length}`;
+    `${i + 1} / ${list.length}`;
 }
 
 function renderBBoxList() {
@@ -1302,8 +1366,18 @@ function renderBBoxList() {
 }
 
 function updateFilterCount() {
-  const total = imageMeta.length;
-  const labeled = imageMeta.filter(x => x.labeled).length;
+  let list = imageMeta;
+
+  // ===== FILTER BATCH (CHUẨN) =====
+  if (selectedBatch !== "all") {
+    list = list.filter(m => {
+      const parts = m.path.split("/");
+      return parts[1] === selectedBatch; // 🔥 CHÍNH XÁC
+    });
+  }
+
+  const total = list.length;
+  const labeled = list.filter(x => x.labeled).length;
   const unlabeled = total - labeled;
 
   document.getElementById("btnAll").innerText = `All (${total})`;
