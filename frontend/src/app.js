@@ -4,6 +4,9 @@ const ctx = canvas.getContext("2d");
 // ===== FLOATING CLASS PICKER =====
 const floatingClass = document.getElementById("floatingClass");
 let isChoosingClass = false;
+let viewMode = "single"; // single | grid
+let currentPage = 1;
+const PAGE_SIZE = 9;
 
 function showFloatingClass(x, y, onSelect) {
   floatingClass.innerHTML = "";
@@ -21,10 +24,10 @@ function showFloatingClass(x, y, onSelect) {
   });
 
   floatingClass.style.left = x + "px";
-  floatingClass.style.top = y + "px";
-  floatingClass.style.display = "block";
+floatingClass.style.top = y + "px";
+floatingClass.style.display = "block";
 
-  floatingClass.focus();
+floatingClass.focus();
 
   isChoosingClass = true;
 
@@ -34,18 +37,42 @@ function showFloatingClass(x, y, onSelect) {
   floatingClass.selectedIndex = -1;
 }
 
-floatingClass.onchange = () => {
+floatingClass.onchange = (e) => {
+  e.stopPropagation();
+
   const value = floatingClass.value;
 
-  if (value !== "") {
-    lastSelectedClass = value;
+  if (!value) return;
 
-    onSelect(value);
+  lastSelectedClass = value;
+
+  onSelect(value);
+
+  floatingClass.blur(); // 🔥 QUAN TRỌNG
+};
+
+
+floatingClass.onclick = (e) => {
+  e.stopPropagation(); // 🔥 tránh bị document click đóng
+};
+
+setTimeout(() => {
+  floatingClass.onblur = () => {
+    const value = floatingClass.value;
+
+    // 🔥 nếu chưa chọn gì nhưng có lastSelectedClass → dùng nó
+    if (!value && lastSelectedClass) {
+      onSelect(lastSelectedClass);
+    }
+
+    // 🔥 nếu có value → cũng confirm luôn
+    if (value) {
+      onSelect(value);
+    }
 
     floatingClass.style.display = "none";
-    isChoosingClass = false;
-  }
-};
+  };
+}, 0);
 }
 
 // ================= CONFIG =================
@@ -149,6 +176,62 @@ let dragOffsetY = 0;
 let isResizing = false;
 let resizeCorner = null;
 
+let filterMode = "all"; // all | labeled | unlabeled
+
+function getFilteredImages() {
+  return imageMeta
+    .filter(item => {
+      if (filterMode === "labeled") return item.labeled;
+      if (filterMode === "unlabeled") return !item.labeled;
+      return true;
+    })
+    .map(item => `/datasets/${item.path}`);
+}
+
+window.setFilter = function(mode, el) {
+  filterMode = mode;
+
+  // active button
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  if (el) el.classList.add("active");
+
+  const canvas = document.getElementById("canvas");
+  const grid = document.getElementById("gridView");
+  const pagination = document.getElementById("pagination");
+  const sidebar = document.getElementById("bboxSidebar");
+
+  // 🔥 switch mode
+  if (mode === "all") {
+    viewMode = "single";
+    index = 0;
+
+    loadImage();
+    updateImageCounter();
+
+    canvas.style.display = "block";
+    grid.style.display = "none";
+    pagination.style.display = "none";
+
+    // ✅ SHOW SIDEBAR
+    if (sidebar) sidebar.style.display = "block";
+
+  } else {
+    viewMode = "grid";
+    currentPage = 1;
+
+    renderGrid();
+
+    canvas.style.display = "none";
+    grid.style.display = "grid";
+    pagination.style.display = "flex";
+
+    // ✅ HIDE SIDEBAR
+    if (sidebar) sidebar.style.display = "none";
+  }
+  updateImageCounter();
+};
 // ================= UTILS =================
 function getKey() {
   return images[index];
@@ -337,7 +420,7 @@ function getMousePos(e) {
 
 // ================= MOUSE =================
 canvas.onmousedown = (e) => {
-  if (isChoosingClass) return; // 🔥 QUAN TRỌNG
+//  if (isChoosingClass) return; // 🔥 QUAN TRỌNG
   if (!classes.length) {
   alert("Chưa load class!");
   return;
@@ -364,42 +447,42 @@ canvas.onmousedown = (e) => {
   }
 
   // ===== CLICK NGOÀI → CHỈ UNSELECT =====
-  if (clickedIndex === -1 && selectedBoxIndex !== -1) {
-    selectedBoxIndex = -1;
-    hoveredBoxIndex = -1;
-    drawAll();
-    return;
-  }
+ if (clickedIndex === -1 && selectedBoxIndex !== -1) {
+  selectedBoxIndex = -1;
+  hoveredBoxIndex = -1;
+  drawAll();
+
+}
 
   // ===== CLICK VÀO BOX =====
   if (clickedIndex !== -1) {
-    selectedBoxIndex = clickedIndex;
+  selectedBoxIndex = clickedIndex;
 
-    const box = objects[selectedBoxIndex].bbox;
+  const box = objects[selectedBoxIndex].bbox;
 
-    const corner = getCorner(pos.x, pos.y, box);
+  const corner = getCorner(pos.x, pos.y, box);
 
-    if (corner) {
+  if (corner) {
+    isResizing = true;
+    resizeCorner = corner;
+    resizeEdge = null;
+  } else {
+    const edge = getEdge(pos.x, pos.y, box);
+
+    if (edge) {
       isResizing = true;
-      resizeCorner = corner;
-      resizeEdge = null;
+      resizeEdge = edge;
+      resizeCorner = null;
     } else {
-      const edge = getEdge(pos.x, pos.y, box);
-
-      if (edge) {
-        isResizing = true;
-        resizeEdge = edge;
-        resizeCorner = null;
-      } else {
-        isDraggingBox = true;
-        dragOffsetX = pos.x - box[0];
-        dragOffsetY = pos.y - box[1];
-      }
+      isDraggingBox = true;
+      dragOffsetX = pos.x - box[0];
+      dragOffsetY = pos.y - box[1];
     }
-
-    drawAll();
-    return;
   }
+
+  drawAll();
+  return;
+}
 
   // ===== VẼ MỚI =====
   startX = pos.x;
@@ -527,15 +610,24 @@ canvas.onmouseup = (e) => {
     return;
   }
 
-  if (!drawing) return;
+  // ❌ KHÔNG DÙNG drawing nữa
+  if (!previewBox) return;
 
   const pos = getMousePos(e);
 
+  // tránh click nhầm
+  const dx = Math.abs(pos.x - startX);
+  const dy = Math.abs(pos.y - startY);
+  if (dx < 2 && dy < 2) {
+    previewBox = null;
+    return;
+  }
+
   // ===== TẠO BOX =====
-  const newBox = {
-    class: lastSelectedClass || "", // 🔥 dùng class gần nhất (nếu có)
-    bbox: [startX, startY, pos.x, pos.y]
-  };
+ const newBox = {
+  class: lastSelectedClass || "", // 🔥 FIX CHÍNH
+  bbox: [startX, startY, pos.x, pos.y]
+};
 
   const objects = getCurrentObjects();
   objects.push(newBox);
@@ -543,26 +635,30 @@ canvas.onmouseup = (e) => {
   drawing = false;
   previewBox = null;
 
+// 🔥 luôn update trước
+if (window.markDirty) window.markDirty();
+drawAll();
+renderBBoxList();
+
+showFloatingClass(
+  e.clientX,
+  e.clientY,
+  (selectedClass) => {
+    newBox.class = selectedClass;
+
+    lastSelectedClass = selectedClass;
+
+    if (window.markDirty) window.markDirty();
+
+    drawAll();
+    renderBBoxList();
+  }
+);
+
   drawAll();
   renderBBoxList();
 
-  // ===== LUÔN HIỆN DROPDOWN (NHƯNG CÓ DEFAULT) =====
-  const rect = canvas.getBoundingClientRect();
 
-  showFloatingClass(
-    e.clientX,
-    e.clientY,
-    (selectedClass) => {
-      newBox.class = selectedClass;
-
-      lastSelectedClass = selectedClass; // 🔥 update memory
-
-      if (window.markDirty) window.markDirty();
-
-      drawAll();
-      renderBBoxList();
-    }
-  );
 };
 
 // ================= EDIT =================
@@ -610,7 +706,7 @@ window.markDirty = function () {
   if (btn) {
     btn.disabled = false;
     btn.style.opacity = 1;
-  }
+  };
 
   console.log("DIRTY TRUE");
 };
@@ -665,23 +761,50 @@ window.uploadFolder = async function () {
   const files = document.getElementById("folderInput").files;
   const formData = new FormData();
 
-  for (let f of files) formData.append("files", f);
+  const BATCH_SIZE = 50;
+
+for (let i = 0; i < files.length; i += BATCH_SIZE) {
+  const batch = Array.from(files).slice(i, i + BATCH_SIZE);
+
+  const formData = new FormData();
+
+  // ⚠️ QUAN TRỌNG: phải là string
+  formData.append("batch", String(Math.floor(i / BATCH_SIZE)));
+
+  batch.forEach(f => formData.append("files", f));
+
+  await fetch(`/upload?project=${currentProject}`, {
+    method: "POST",
+    body: formData
+  });
+}
 
   await fetch(`/upload?project=${currentProject}`, {
     method: "POST",
     body: formData
   });
 
-  loadImagesFromProject();
+  await loadImagesFromProject();
 };
 
 async function loadImagesFromProject() {
   const res = await fetch(`/images?project=${currentProject}`);
   const data = await res.json();
 
-  images = data.map(name => `/datasets/${currentProject}/images/${name}`);
-  index = 0;
-  loadImage();
+  imageMeta = data;
+  updateFilterCount();
+  images = data
+  .filter(x => x.path) // 🔥 bỏ undefined
+  .map(x => `/datasets/${x.path}`);
+
+  // 🔥 QUAN TRỌNG
+  if (viewMode === "grid") {
+    renderGrid();
+  } else {
+    index = 0;
+    loadImage();
+    updateImageCounter();
+  }
 }
 
 // ================= PROJECT LIST =================
@@ -757,20 +880,30 @@ window.loadProject = async function () {
 
 // ================= NAVIGATION =================
 window.nextImage = function () {
-  if (index < images.length - 1) {
-    save(); // auto save trước khi chuyển
+  const list = getFilteredImages();
+  const current = images[index];
+  let i = list.indexOf(current);
 
-    index++;
+  if (i < list.length - 1) {
+    save();
+    const next = list[i + 1];
+    index = images.indexOf(next);
     loadImage();
+    updateImageCounter();
   }
 };
 
 window.prevImage = function () {
-  if (index > 0) {
-    save();
+  const list = getFilteredImages();
+  const current = images[index];
+  let i = list.indexOf(current);
 
-    index--;
+  if (i > 0) {
+    save();
+    const prev = list[i - 1];
+    index = images.indexOf(prev);
     loadImage();
+    updateImageCounter();
   }
 };
 
@@ -839,12 +972,7 @@ window.exportDataset = async function () {
 let isDirty = false;
 
 // override add object để detect change
-const originalPush = Array.prototype.push;
-Array.prototype.push = function (...args) {
-  isDirty = true;
-  updateSaveButton();
-  return originalPush.apply(this, args);
-};
+window.markDirty();
 
 // override splice (delete)
 const originalSplice = Array.prototype.splice;
@@ -883,6 +1011,7 @@ const _nextImage = window.nextImage;
 window.nextImage = async function () {
   await autoSaveIfNeeded();
   _nextImage();
+
 };
 
 const _prevImage = window.prevImage;
@@ -954,28 +1083,49 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") {
     e.preventDefault();
     nextImage();
+    updateImageCounter();
   }
 
   // ===== PREV (←) =====
   if (e.key === "ArrowLeft") {
     e.preventDefault();
     prevImage();
+    updateImageCounter();
   }
 
 });
 
 document.addEventListener("click", (e) => {
+  // 🔥 nếu click từ canvas → KHÔNG tắt
+  if (e.target === canvas) return;
 
-  // 🔥 nếu đang chọn class thì bỏ qua click đầu tiên
-  if (isChoosingClass) {
-    isChoosingClass = false;
-    return;
-  }
-
-  if (!floatingClass.contains(e.target)) {
+  if (floatingClass.style.display === "block" && !floatingClass.contains(e.target)) {
     floatingClass.style.display = "none";
   }
 });
+function updateImageMeta() {
+  const currentPath = getKey().replace("/datasets/", "");
+  const meta = imageMeta.find(m => m.path === currentPath);
+
+  if (meta) {
+    const objects = getCurrentObjects();
+    meta.count = objects.length;
+    meta.labeled = objects.length > 0;
+  }
+  updateFilterCount();
+}
+
+function updateImageCounter() {
+  const list = getFilteredImages();
+
+  const current = images[index];
+  const i = list.indexOf(current);
+
+  const currentIndex = i >= 0 ? i + 1 : 0;
+
+  document.getElementById("imageCounter").innerText =
+    `${currentIndex} / ${list.length}`;
+}
 
 function renderBBoxList() {
   const list = document.getElementById("bboxList");
@@ -1009,7 +1159,6 @@ function renderBBoxList() {
     label.className = "bbox-label";
     label.textContent = obj.class;
 
-    // màu giống canvas
     label.style.background = color;
     label.style.color = getTextColor(color);
 
@@ -1035,10 +1184,14 @@ function renderBBoxList() {
       select.onchange = () => {
         obj.class = select.value;
 
+        updateImageMeta(); // 🔥 FIX
+
         if (window.markDirty) window.markDirty();
 
         drawAll();
         renderBBoxList();
+
+        if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
       };
 
       select.onblur = () => {
@@ -1059,6 +1212,8 @@ function renderBBoxList() {
 
       objects.splice(i, 1);
 
+      updateImageMeta(); // 🔥 FIX QUAN TRỌNG
+
       if (window.markDirty) window.markDirty();
 
       selectedBoxIndex = -1;
@@ -1066,6 +1221,8 @@ function renderBBoxList() {
 
       drawAll();
       renderBBoxList();
+
+      if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
     };
 
     // ===== CLICK → SELECT =====
@@ -1082,14 +1239,104 @@ function renderBBoxList() {
 
     list.appendChild(item);
 
-    // ===== AUTO SCROLL TO SELECT =====
+    // ===== AUTO SCROLL =====
     if (isSelected) {
       setTimeout(() => {
         item.scrollIntoView({ block: "nearest" });
       }, 0);
     }
   });
+
+  // 🔥 đảm bảo sync cuối cùng
+  updateImageMeta();
 }
+
+function updateFilterCount() {
+  const total = imageMeta.length;
+  const labeled = imageMeta.filter(x => x.labeled).length;
+  const unlabeled = total - labeled;
+
+  document.getElementById("btnAll").innerText = `All (${total})`;
+  document.getElementById("btnLabeled").innerText = `Labeled (${labeled})`;
+  document.getElementById("btnUnlabeled").innerText = `Unlabeled (${unlabeled})`;
+}
+
+function renderGrid() {
+  const grid = document.getElementById("gridView");
+  const pagination = document.getElementById("pagination");
+
+  const list = getFilteredImages();
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+
+  const pageItems = list.slice(start, end);
+
+  grid.innerHTML = "";
+
+  pageItems.forEach(imgPath => {
+    const div = document.createElement("div");
+    div.className = "grid-item";
+
+    // ✅ FIX LABELED
+    const meta = imageMeta.find(m => `/datasets/${m.path}` === imgPath);
+
+    if (meta && meta.labeled) {
+      div.classList.add("labeled");
+    } else {
+      div.classList.add("unlabeled");
+    }
+
+    const imgEl = document.createElement("img");
+    imgEl.src = imgPath;
+
+    div.appendChild(imgEl);
+
+    // click → quay về annotate
+    div.onclick = () => {
+      viewMode = "single";
+
+      document.getElementById("canvas").style.display = "block";
+      grid.style.display = "none";
+      pagination.style.display = "none";
+
+      document.getElementById("bboxSidebar").style.display = "block";
+
+      index = images.indexOf(imgPath);
+      loadImage();
+      updateImageCounter();
+    };
+
+    grid.appendChild(div);
+  });
+
+  renderPagination(list.length);
+  pagination.style.display = "flex";
+}
+
+function renderPagination(total) {
+  const pagination = document.getElementById("pagination");
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  pagination.innerHTML = "";
+
+  for (let i = 1; i <= totalPages; i++) {
+    const btn = document.createElement("button");
+    btn.className = "page-btn";
+    btn.innerText = i;
+
+    if (i === currentPage) btn.classList.add("active");
+
+    btn.onclick = () => {
+      currentPage = i;
+      renderGrid();
+    };
+
+    pagination.appendChild(btn);
+  }
+}
+
 
 // ================= INIT =================
 renderClassSelect();

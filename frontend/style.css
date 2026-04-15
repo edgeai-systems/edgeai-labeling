@@ -168,22 +168,25 @@ input, select {
   display: flex;
   gap: 20px;
   align-items: flex-start;
+  width: 100%;
 }
 
 /* ===== SIDEBAR ===== */
 .bbox-sidebar {
+  flex: 0 0 220px;   /* 🔥 FIX KHÔNG CHO CO */
   width: 220px;
+
   max-height: 70vh;
   overflow-y: auto;
+
   background: rgba(17,24,39,0.95);
   border: 1px solid #374151;
   border-radius: 10px;
   padding: 10px;
   color: white;
   font-size: 13px;
-
-  /* 🔥 KHÔNG ĐÈ CANVAS */
-  position: relative;
+  position: sticky;
+  top: 20px;
 }
 
 /* ===== TITLE ===== */
@@ -262,4 +265,103 @@ input, select {
 .bbox-del {
   color: #ef4444;
   cursor: pointer;
+}
+
+/* ===== FILTER BUTTON ===== */
+.filter-btn {
+  background: #1f2937;
+  border: 1px solid #374151;
+  transition: all 0.2s ease;
+}
+
+/* hover */
+.filter-btn:hover {
+  background: #374151;
+}
+
+/* ACTIVE */
+.filter-btn.active {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  color: white;
+  box-shadow: 0 0 10px rgba(37,99,235,0.7);
+  border-color: #2563eb;
+}
+
+/* glow nhẹ */
+.filter-btn.active:hover {
+  box-shadow: 0 0 15px rgba(37,99,235,1);
+}
+
+.grid-view {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 20px;
+}
+
+.grid-item {
+  position: relative;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+}
+
+.grid-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+
+/* labeled */
+.grid-item.labeled {
+  border-color: #22c55e;
+}
+
+/* unlabeled */
+.grid-item.unlabeled {
+  border-color: #6b7280;
+}
+
+/* hover */
+.grid-item:hover {
+  transform: scale(1.03);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.page-btn {
+  padding: 4px 8px;
+  border: 1px solid #374151;
+  cursor: pointer;
+}
+
+.page-btn.active {
+  background: #2563eb;
+}
+
+#gridWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.grid-view {
+  display: grid;
+  grid-template-columns: repeat(3, 140px);
+  gap: 12px;
+  justify-content: center;
+}
+
+.pagination {
+  margin-top: 15px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
 }
