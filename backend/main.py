@@ -38,34 +38,60 @@ async def create_project(name: str):
 
 # ================= UPLOAD =================
 @app.post("/upload")
-async def upload(project: str, batch: int = Form(0), files: list[UploadFile] = File(...)):
-    project_path = os.path.join(BASE_DIR, project, f"batch_{batch}", "images")
-    os.makedirs(project_path, exist_ok=True)
+async def upload(project: str, files: list[UploadFile] = File(...)):
+    project_root = os.path.join(BASE_DIR, project)
+    os.makedirs(project_root, exist_ok=True)
 
+    # ===== TÌM BATCH TIẾP THEO =====
+    existing_batches = [
+        d for d in os.listdir(project_root)
+        if d.startswith("batch_") and os.path.isdir(os.path.join(project_root, d))
+    ]
+
+    next_batch = len(existing_batches)
+
+    batch_path = os.path.join(project_root, f"batch_{next_batch}", "images")
+
+    saved = 0
+    skipped = 0
+
+    # ===== SAVE FILE =====
     for file in files:
         ext = os.path.splitext(file.filename)[1].lower()
-
         if ext not in ALLOWED_EXT:
-            continue  # bỏ qua file không hợp lệ
+            continue
 
         filename = os.path.basename(file.filename)
-        file_path = os.path.join(project_path, filename)
 
-        skip = False
-
-        for root, _, files in os.walk(os.path.join(BASE_DIR, project)):
-            if filename in files:
-                print("Skip duplicate:", filename)
-                skip = True
+        # ===== CHECK TRÙNG TOÀN PROJECT =====
+        duplicate = False
+        for root, _, fs in os.walk(project_root):
+            if filename in fs:
+                duplicate = True
                 break
 
-        if skip:
+        if duplicate:
+            print("Skip duplicate:", filename)
+            skipped += 1
             continue
+
+        # 🔥 LAZY CREATE (CHỈ TẠO KHI CÓ FILE HỢP LỆ)
+        if saved == 0:
+            os.makedirs(batch_path, exist_ok=True)
+
+        file_path = os.path.join(batch_path, filename)
 
         with open(file_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-    return {"status": "uploaded"}
+        saved += 1
+
+    return {
+        "batch": next_batch,
+        "saved": saved,
+        "skipped": skipped,
+        "status": "empty" if saved == 0 else "ok"
+    }
 
 # ================= LIST IMAGES =================
 @app.get("/images")

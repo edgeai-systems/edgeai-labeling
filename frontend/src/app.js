@@ -743,27 +743,78 @@ window.save = async function () {
 let currentProject = "";
 
 window.createProject = async function () {
-  const name = document.getElementById("projectName").value;
-  if (!name) return;
+  const nameInput = document.getElementById("projectName");
+  const name = nameInput.value.trim();
 
-  await fetch(`/create_project?name=${name}`, { method: "POST" });
+  if (!name) {
+    alert("Nhập tên project");
+    return;
+  }
 
-  currentProject = name;
-  classes = [];
-  renderClassSelect();
+  try {
+    // ===== CREATE PROJECT =====
+    await fetch(`/create_project?name=${name}`, {
+      method: "POST"
+    });
 
-  alert("Project created!");
+    // ===== RESET STATE =====
+    currentProject = name;
+    classes = [];
+    annotations = {};
+    images = [];
+    index = 0;
+
+    renderClassSelect();
+
+    // ===== RELOAD DROPDOWN =====
+    await loadProjects();
+
+    // ===== AUTO SELECT PROJECT MỚI =====
+    const select = document.getElementById("projectSelect");
+    select.value = name;
+
+    // ===== LOAD DATA =====
+    await loadImagesFromProject();
+
+    // ===== CLEAR INPUT =====
+    nameInput.value = "";
+
+    console.log("Created project:", name);
+
+  } catch (err) {
+    console.error("Create project error:", err);
+    alert("Lỗi tạo project!");
+  }
 };
+
+async function loadProjects() {
+  try {
+    const res = await fetch("/projects");
+    const projects = await res.json();
+
+    const select = document.getElementById("projectSelect");
+
+    // clear cũ
+    select.innerHTML = "";
+
+    projects.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    console.error("Load projects error:", err);
+  }
+}
 
 window.uploadFolder = async function () {
   if (!currentProject) return alert("Tạo project trước!");
 
   const files = document.getElementById("folderInput").files;
 
-  if (!files.length) {
-    alert("Chưa chọn file!");
-    return;
-  }
+  if (!files.length) return alert("Chưa chọn file!");
 
   const BATCH_SIZE = 50;
 
@@ -772,29 +823,16 @@ window.uploadFolder = async function () {
 
     const formData = new FormData();
 
-    // batch index
-    formData.append("batch", String(Math.floor(i / BATCH_SIZE)));
+    batch.forEach(f => formData.append("files", f));
 
-    // append files
-    batch.forEach(f => {
-      formData.append("files", f);
+    const res = await fetch(`/upload?project=${currentProject}`, {
+      method: "POST",
+      body: formData
     });
 
-    try {
-      const res = await fetch(`/upload?project=${currentProject}`, {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-      console.log("Upload batch:", i / BATCH_SIZE, data);
-
-    } catch (err) {
-      console.error("Upload error:", err);
-    }
+    const data = await res.json();
+    console.log("Uploaded batch:", data);
   }
-
-  // 🔥 XÓA request dư ở đây (QUAN TRỌNG)
 
   await loadImagesFromProject();
 };
