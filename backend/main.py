@@ -1,12 +1,20 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi import Form
 from pydantic import BaseModel
+from ultralytics import YOLO
+import numpy as np
+import cv2
+
 import os
 import zipfile
 import shutil
 import json
 from datetime import datetime
+
+ALLOWED_EXT = [".jpg", ".jpeg", ".png"]
+model_cache = {}
 
 app = FastAPI()
 
@@ -14,7 +22,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="../frontend"), name="static")
 app.mount("/datasets", StaticFiles(directory="datasets"), name="datasets")
 
-BASE_DIR = "datasets"
+BASE_DIR = os.path.join(os.path.dirname(__file__), "datasets")
 os.makedirs(BASE_DIR, exist_ok=True)
 
 # ================= ROOT =================
@@ -32,30 +40,120 @@ async def create_project(name: str):
 
     return {"status": "created"}
 
+
+@app.post("/upload_model")
+async def upload_model(file: UploadFile = File(...)):
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
+    os.makedirs(model_dir, exist_ok=True)
+
+    filename = os.path.basename(file.filename)
+
+    # ===== CHECK EXT =====
+    if not filename.endswith(".pt"):
+        return {"status": "error", "msg": "Only .pt allowed"}
+
+    save_path = os.path.join(model_dir, filename)
+
+    # ===== 🔥 CHECK TRÙNG =====
+    if os.path.exists(save_path):
+        return {"status": "error", "msg": "Model already exists"}
+
+    # ===== SAVE FILE =====
+    with open(save_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # ===== 🔥 CLEAR CACHE =====
+    model_cache.pop(filename, None)
+
+    return {"status": "uploaded", "model": filename}
+
 # ================= UPLOAD =================
 @app.post("/upload")
 async def upload(project: str, files: list[UploadFile] = File(...)):
-    project_path = os.path.join(BASE_DIR, project, "images")
-    os.makedirs(project_path, exist_ok=True)
+    project_root = os.path.join(BASE_DIR, project)
+    os.makedirs(project_root, exist_ok=True)
 
+    # ===== TÌM BATCH TIẾP THEO =====
+    existing_batches = [
+        d for d in os.listdir(project_root)
+        if d.startswith("batch_") and os.path.isdir(os.path.join(project_root, d))
+    ]
+
+    next_batch = len(existing_batches)
+
+    batch_path = os.path.join(project_root, f"batch_{next_batch}", "images")
+
+    saved = 0
+    skipped = 0
+
+    # ===== SAVE FILE =====
     for file in files:
-        filename = os.path.basename(file.filename)  # FIX path
-        file_path = os.path.join(project_path, filename)
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_EXT:
+            continue
+
+        filename = os.path.basename(file.filename)
+
+        # ===== CHECK TRÙNG TOÀN PROJECT =====
+        duplicate = False
+        for root, _, fs in os.walk(project_root):
+            if filename in fs:
+                duplicate = True
+                break
+
+        if duplicate:
+            print("Skip duplicate:", filename)
+            skipped += 1
+            continue
+
+        # 🔥 LAZY CREATE (CHỈ TẠO KHI CÓ FILE HỢP LỆ)
+        if saved == 0:
+            os.makedirs(batch_path, exist_ok=True)
+
+        file_path = os.path.join(batch_path, filename)
 
         with open(file_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-    return {"status": "uploaded"}
+        saved += 1
+
+    return {
+        "batch": next_batch,
+        "saved": saved,
+        "skipped": skipped,
+        "status": "empty" if saved == 0 else "ok"
+    }
 
 # ================= LIST IMAGES =================
 @app.get("/images")
 async def list_images(project: str):
-    folder = os.path.join(BASE_DIR, project, "images")
+    project_path = os.path.join(BASE_DIR, project)
 
-    if not os.path.exists(folder):
-        return []
+    result = []
 
-    return os.listdir(folder)
+    for root, _, files in os.walk(project_path):
+        if "images" in root:
+            for f in files:
+
+                # 🔥 chỉ lấy file ảnh
+                if not f.lower().endswith((".jpg", ".jpeg", ".png")):
+                    continue
+
+                full_path = os.path.join(root, f)
+
+                # 👉 path dùng cho frontend
+                rel_path = full_path.replace(BASE_DIR + os.sep, "").replace("\\", "/")
+
+                # 👉 check label tồn tại
+                label_name = os.path.splitext(f)[0] + ".txt"
+                label_path = os.path.join(project_path, "labels", label_name)
+
+                result.append({
+                    "path": rel_path,
+                    "labeled": os.path.exists(label_path)
+                })
+
+    return result
 
 # ================= SAVE =================
 class SaveRequest(BaseModel):
@@ -111,13 +209,28 @@ async def save(data: SaveRequest):
 
     return {"status": "saved"}
 
+import re
+
 @app.get("/projects")
 async def list_projects():
     if not os.path.exists(BASE_DIR):
         return []
 
-    return [d for d in os.listdir(BASE_DIR)
-            if os.path.isdir(os.path.join(BASE_DIR, d))]
+    projects = []
+
+    for d in os.listdir(BASE_DIR):
+        path = os.path.join(BASE_DIR, d)
+
+        if not os.path.isdir(path):
+            continue
+
+        # 🔥 bỏ export (có timestamp)
+        if re.search(r"\d{4}-\d{2}-\d{2}", d):
+            continue
+
+        projects.append(d)
+
+    return projects
 
 @app.get("/classes")
 async def get_classes(project: str):
@@ -128,6 +241,30 @@ async def get_classes(project: str):
             return json.load(f)
 
     return []
+
+@app.get("/models")
+async def list_models():
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
+
+    if not os.path.exists(model_dir):
+        return []
+
+    return [f for f in os.listdir(model_dir) if f.endswith(".pt")]
+
+@app.get("/batches")
+def list_batches(project: str):
+    project_path = os.path.join(BASE_DIR, project)
+
+    if not os.path.exists(project_path):
+        print("Project path not found:", project_path)
+        return []
+
+    batches = [
+        d for d in os.listdir(project_path)
+        if d.startswith("batch_") and os.path.isdir(os.path.join(project_path, d))
+    ]
+
+    return sorted(batches)
 
 @app.get("/annotations")
 async def get_annotations(project: str, image: str):
@@ -170,42 +307,137 @@ async def get_annotations(project: str, image: str):
 @app.get("/export")
 async def export(project: str):
     project_path = os.path.join(BASE_DIR, project)
+
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    zip_name = f"{project}_{now}.zip"
-    zip_path = os.path.join(BASE_DIR, zip_name)
+    export_dir = os.path.join(BASE_DIR, f"{project}_{now}")
 
-    label_dir = os.path.join(project_path, "labels")
+    images_out = os.path.join(export_dir, "images")
+    labels_out = os.path.join(export_dir, "labels")
 
-    # ================= LOAD CLASS NAMES =================
+    os.makedirs(images_out, exist_ok=True)
+    os.makedirs(labels_out, exist_ok=True)
+
+    used_names = set()
+
+    # ===== LOAD CLASSES =====
     class_file = os.path.join(project_path, "classes.json")
-
     if os.path.exists(class_file):
         with open(class_file, "r") as f:
             class_names = json.load(f)
     else:
         class_names = []
 
-    # ================= CREATE ZIP =================
+    # ===== DUYỆT TẤT CẢ BATCH =====
+    for root, _, files in os.walk(project_path):
+        if "images" not in root:
+            continue
+
+        for f in files:
+            if not f.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+
+            img_path = os.path.join(root, f)
+
+            label_name = os.path.splitext(f)[0] + ".txt"
+            label_path = None
+
+            for r, _, fs in os.walk(project_path):
+                if "labels" in r and label_name in fs:
+                    label_path = os.path.join(r, label_name)
+                    break
+
+            if not label_path:
+                continue
+
+            # 👉 chỉ export ảnh có label
+            if not os.path.exists(label_path):
+                continue
+
+            if os.path.getsize(label_path) == 0:
+                continue
+
+            # ===== TRÁNH TRÙNG TÊN =====
+            name, ext = os.path.splitext(f)
+            new_name = f
+            i = 1
+
+            while new_name in used_names:
+                new_name = f"{name}_{i}{ext}"
+                i += 1
+
+            used_names.add(new_name)
+
+            # ===== COPY IMAGE =====
+            shutil.copy(img_path, os.path.join(images_out, new_name))
+
+            # ===== COPY LABEL =====
+            new_label = new_name.rsplit(".", 1)[0] + ".txt"
+            shutil.copy(label_path, os.path.join(labels_out, new_label))
+
+    # ===== classes.txt =====
+    with open(os.path.join(export_dir, "classes.txt"), "w") as f:
+        f.write("\n".join(class_names))
+
+    # ===== data.yaml =====
+    with open(os.path.join(export_dir, "data.yaml"), "w") as f:
+        f.write(f"path: .\n")
+        f.write(f"train: images\n")
+        f.write(f"val: images\n\n")
+        f.write(f"nc: {len(class_names)}\n")
+        f.write(f"names: {json.dumps(class_names)}\n")
+
+    # ===== ZIP =====
+    zip_path = export_dir + ".zip"
+
     with zipfile.ZipFile(zip_path, "w") as z:
-
-        # add images + labels
-        for root, _, files in os.walk(project_path):
+        for root, _, files in os.walk(export_dir):
             for f in files:
-                full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, project_path)
-                z.write(full_path, rel_path)
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, export_dir)
+                z.write(full, rel)
 
-        # ================= classes.txt =================
-        z.writestr("classes.txt", "\n".join(class_names))
+    return FileResponse(zip_path, filename=os.path.basename(zip_path))
 
-        # ================= data.yaml =================
-        yaml_content = f"""
-train: images
-val: images
 
-nc: {len(class_names)}
-names: {class_names}
-"""
-        z.writestr("data.yaml", yaml_content.strip())
+def get_model(model_name):
+    if model_name not in model_cache:
+        path = os.path.join(os.path.dirname(__file__), "models", model_name)
+        model_cache[model_name] = YOLO(path)
+    return model_cache[model_name]
 
-    return FileResponse(zip_path, filename=zip_name)
+@app.post("/auto_detect")
+async def auto_detect(
+    model: str = Form(...),
+    file: UploadFile = File(...)
+):
+    contents = await file.read()
+
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    yolo = get_model(model)
+
+    results = yolo(img)[0]
+
+    detections = []
+
+    names = yolo.names
+
+    # 🔥 FIX: convert dict → list
+    if isinstance(names, dict):
+        names = [names[i] for i in sorted(names.keys())]
+
+    for box in results.boxes:
+        cls_id = int(box.cls[0])
+        x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+        detections.append({
+            "class": names[cls_id],
+            "class_id": cls_id,
+            "bbox": [x1, y1, x2, y2]
+        })
+
+    return {
+        "detections": detections,
+        "classes": names
+    }

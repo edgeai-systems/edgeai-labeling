@@ -4,7 +4,30 @@ const ctx = canvas.getContext("2d");
 // ===== FLOATING CLASS PICKER =====
 const floatingClass = document.getElementById("floatingClass");
 let isChoosingClass = false;
+let viewMode = "single"; // single | grid
+let currentPage = 1;
+const PAGE_SIZE = 9;
+let selectedBatch = "all";
+let currentImage = null;
+let mouseX = null;
+let mouseY = null;
+let autoModelConfirmed = false;
+let lastModel = null;
 
+function onBatchChange(batch) {
+  selectedBatch = batch;
+
+  index = 0; // 🔥 QUAN TRỌNG
+
+  if (viewMode === "grid") {
+    renderGrid();
+  } else {
+    loadImage();
+  }
+
+  updateFilterCount();
+  updateImageCounter();
+}
 function showFloatingClass(x, y, onSelect) {
   floatingClass.innerHTML = "";
 
@@ -21,10 +44,10 @@ function showFloatingClass(x, y, onSelect) {
   });
 
   floatingClass.style.left = x + "px";
-  floatingClass.style.top = y + "px";
-  floatingClass.style.display = "block";
+floatingClass.style.top = y + "px";
+floatingClass.style.display = "block";
 
-  floatingClass.focus();
+floatingClass.focus();
 
   isChoosingClass = true;
 
@@ -34,18 +57,42 @@ function showFloatingClass(x, y, onSelect) {
   floatingClass.selectedIndex = -1;
 }
 
-floatingClass.onchange = () => {
+floatingClass.onchange = (e) => {
+  e.stopPropagation();
+
   const value = floatingClass.value;
 
-  if (value !== "") {
-    lastSelectedClass = value;
+  if (!value) return;
 
-    onSelect(value);
+  lastSelectedClass = value;
+
+  onSelect(value);
+
+  floatingClass.blur(); // 🔥 QUAN TRỌNG
+};
+
+
+floatingClass.onclick = (e) => {
+  e.stopPropagation(); // 🔥 tránh bị document click đóng
+};
+
+setTimeout(() => {
+  floatingClass.onblur = () => {
+    const value = floatingClass.value;
+
+    // 🔥 nếu chưa chọn gì nhưng có lastSelectedClass → dùng nó
+    if (!value && lastSelectedClass) {
+      onSelect(lastSelectedClass);
+    }
+
+    // 🔥 nếu có value → cũng confirm luôn
+    if (value) {
+      onSelect(value);
+    }
 
     floatingClass.style.display = "none";
-    isChoosingClass = false;
-  }
-};
+  };
+}, 0);
 }
 
 // ================= CONFIG =================
@@ -149,15 +196,91 @@ let dragOffsetY = 0;
 let isResizing = false;
 let resizeCorner = null;
 
+let filterMode = "all"; // all | labeled | unlabeled
+
+function getFilteredImages() {
+  let list = images;
+
+  // ===== FILTER BATCH =====
+  if (selectedBatch !== "all") {
+    list = list.filter(img => img.includes(`/${selectedBatch}/`));
+  }
+
+  // ===== FILTER MODE (DÙNG imageMeta - CHUẨN) =====
+  if (filterMode === "labeled") {
+    list = list.filter(img => {
+      const meta = imageMeta.find(m => `/datasets/${m.path}` === img);
+      return meta && meta.labeled;
+    });
+  }
+
+  if (filterMode === "unlabeled") {
+    list = list.filter(img => {
+      const meta = imageMeta.find(m => `/datasets/${m.path}` === img);
+      return !meta || !meta.labeled;
+    });
+  }
+
+  return list;
+}
+
+window.setFilter = function(mode, el) {
+  filterMode = mode;
+
+  // active button
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  if (el) el.classList.add("active");
+
+  const canvas = document.getElementById("canvas");
+  const grid = document.getElementById("gridView");
+  const pagination = document.getElementById("pagination");
+  const sidebar = document.getElementById("bboxSidebar");
+
+  // 🔥 switch mode
+  if (mode === "all") {
+    viewMode = "single";
+    index = 0;
+
+    loadImage();
+    updateImageCounter();
+
+    canvas.style.display = "block";
+    grid.style.display = "none";
+    pagination.style.display = "none";
+
+    // ✅ SHOW SIDEBAR
+    if (sidebar) sidebar.style.display = "block";
+
+  } else {
+    viewMode = "grid";
+    currentPage = 1;
+
+    renderGrid();
+
+    canvas.style.display = "none";
+    grid.style.display = "grid";
+    pagination.style.display = "flex";
+
+    // ✅ HIDE SIDEBAR
+    if (sidebar) sidebar.style.display = "none";
+  }
+  updateImageCounter();
+};
 // ================= UTILS =================
 function getKey() {
-  return images[index];
+  return currentImage;
 }
 
 function getCurrentObjects() {
-  const key = getKey();
-  if (!annotations[key]) annotations[key] = [];
-  return annotations[key];
+  if (!currentImage) return [];
+
+  if (!annotations[currentImage]) {
+    annotations[currentImage] = [];
+  }
+
+  return annotations[currentImage];
 }
 
 function isInsideBox(x, y, box) {
@@ -193,9 +316,17 @@ function getEdge(x, y, box) {
 
 // ================= LOAD IMAGE =================
 function loadImage() {
-  if (!images.length) return;
+  const list = getFilteredImages();
 
-  img.src = images[index];
+  if (!list.length) return;
+
+  if (index < 0 || index >= list.length) index = 0;
+
+  const imgPath = list[index];
+
+  currentImage = imgPath; // 🔥 CHỐT KEY
+
+  img.src = imgPath;
 
   img.onload = () => {
     const maxW = window.innerWidth * 0.8;
@@ -215,6 +346,7 @@ function loadImage() {
     drawAll();
     loadAnnotations();
     renderBBoxList();
+    updateImageCounter();
   };
 }
 
@@ -324,6 +456,38 @@ ctx.fillText(obj.class, dx + 3, dy - 3);
     ctx.setLineDash([]);
   };
   //renderBBoxList();
+  // ===== CROSSHAIR =====
+if (mouseX !== null && mouseY !== null) {
+  ctx.save();
+
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(120,120,120,0.9)";
+  ctx.lineWidth = 1.5;
+
+  const x = mouseX * displayScale;
+  const y = mouseY * displayScale;
+
+  // vertical
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, canvas.height);
+  ctx.stroke();
+
+  // horizontal
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(canvas.width, y);
+  ctx.stroke();
+
+  // điểm giao
+  ctx.beginPath();
+  ctx.arc(x, y, 2, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+
+  ctx.setLineDash([]);
+  ctx.restore();
+}
 }
 
 // ================= MOUSE =================
@@ -337,7 +501,7 @@ function getMousePos(e) {
 
 // ================= MOUSE =================
 canvas.onmousedown = (e) => {
-  if (isChoosingClass) return; // 🔥 QUAN TRỌNG
+//  if (isChoosingClass) return; // 🔥 QUAN TRỌNG
   if (!classes.length) {
   alert("Chưa load class!");
   return;
@@ -364,42 +528,42 @@ canvas.onmousedown = (e) => {
   }
 
   // ===== CLICK NGOÀI → CHỈ UNSELECT =====
-  if (clickedIndex === -1 && selectedBoxIndex !== -1) {
-    selectedBoxIndex = -1;
-    hoveredBoxIndex = -1;
-    drawAll();
-    return;
-  }
+ if (clickedIndex === -1 && selectedBoxIndex !== -1) {
+  selectedBoxIndex = -1;
+  hoveredBoxIndex = -1;
+  drawAll();
+
+}
 
   // ===== CLICK VÀO BOX =====
   if (clickedIndex !== -1) {
-    selectedBoxIndex = clickedIndex;
+  selectedBoxIndex = clickedIndex;
 
-    const box = objects[selectedBoxIndex].bbox;
+  const box = objects[selectedBoxIndex].bbox;
 
-    const corner = getCorner(pos.x, pos.y, box);
+  const corner = getCorner(pos.x, pos.y, box);
 
-    if (corner) {
+  if (corner) {
+    isResizing = true;
+    resizeCorner = corner;
+    resizeEdge = null;
+  } else {
+    const edge = getEdge(pos.x, pos.y, box);
+
+    if (edge) {
       isResizing = true;
-      resizeCorner = corner;
-      resizeEdge = null;
+      resizeEdge = edge;
+      resizeCorner = null;
     } else {
-      const edge = getEdge(pos.x, pos.y, box);
-
-      if (edge) {
-        isResizing = true;
-        resizeEdge = edge;
-        resizeCorner = null;
-      } else {
-        isDraggingBox = true;
-        dragOffsetX = pos.x - box[0];
-        dragOffsetY = pos.y - box[1];
-      }
+      isDraggingBox = true;
+      dragOffsetX = pos.x - box[0];
+      dragOffsetY = pos.y - box[1];
     }
-
-    drawAll();
-    return;
   }
+
+  drawAll();
+  return;
+}
 
   // ===== VẼ MỚI =====
   startX = pos.x;
@@ -410,6 +574,12 @@ canvas.onmousedown = (e) => {
 
 
 canvas.onmousemove = (e) => {
+  const pos = getMousePos(e);
+
+  // 🔥 UPDATE CROSSHAIR
+  mouseX = pos.x;
+  mouseY = pos.y;
+
   if (isPanning) {
     offsetX += (e.clientX - lastX);
     offsetY += (e.clientY - lastY);
@@ -421,7 +591,6 @@ canvas.onmousemove = (e) => {
 
   // ===== MOVE =====
   if (isDraggingBox && selectedBoxIndex !== -1) {
-    const pos = getMousePos(e);
     const box = getCurrentObjects()[selectedBoxIndex].bbox;
 
     const w = box[2] - box[0];
@@ -436,81 +605,67 @@ canvas.onmousemove = (e) => {
     return;
   }
 
+  // ===== RESIZE =====
+  if (isResizing && selectedBoxIndex !== -1) {
+    const box = getCurrentObjects()[selectedBoxIndex].bbox;
 
-// ===== RESIZE (FIX CHUẨN) =====
-if (isResizing && selectedBoxIndex !== -1) {
-  const pos = getMousePos(e);
-  const box = getCurrentObjects()[selectedBoxIndex].bbox;
+    let [x1, y1, x2, y2] = box;
 
-  let [x1, y1, x2, y2] = box;
+    if (resizeCorner === "tl") { x1 = pos.x; y1 = pos.y; }
+    else if (resizeCorner === "tr") { x2 = pos.x; y1 = pos.y; }
+    else if (resizeCorner === "bl") { x1 = pos.x; y2 = pos.y; }
+    else if (resizeCorner === "br") { x2 = pos.x; y2 = pos.y; }
 
-  // ===== CORNER =====
-  if (resizeCorner === "tl") {
-    x1 = pos.x; y1 = pos.y;
+    if (resizeEdge === "left") x1 = pos.x;
+    if (resizeEdge === "right") x2 = pos.x;
+    if (resizeEdge === "top") y1 = pos.y;
+    if (resizeEdge === "bottom") y2 = pos.y;
+
+    if (x1 > x2) [x1, x2] = [x2, x1];
+    if (y1 > y2) [y1, y2] = [y2, y1];
+
+    box[0] = x1;
+    box[1] = y1;
+    box[2] = x2;
+    box[3] = y2;
+
+    drawAll();
+    return;
   }
-  else if (resizeCorner === "tr") {
-    x2 = pos.x; y1 = pos.y;
-  }
-  else if (resizeCorner === "bl") {
-    x1 = pos.x; y2 = pos.y;
-  }
-  else if (resizeCorner === "br") {
-    x2 = pos.x; y2 = pos.y;
-  }
 
-  // ===== EDGE =====
-  if (resizeEdge === "left") x1 = pos.x;
-  if (resizeEdge === "right") x2 = pos.x;
-  if (resizeEdge === "top") y1 = pos.y;
-  if (resizeEdge === "bottom") y2 = pos.y;
-
-  // normalize
-  if (x1 > x2) [x1, x2] = [x2, x1];
-  if (y1 > y2) [y1, y2] = [y2, y1];
-
-  box[0] = x1;
-  box[1] = y1;
-  box[2] = x2;
-  box[3] = y2;
-
-  drawAll();
-  return;
-}
-
+  // ===== DRAW =====
   if (drawing) {
-    const pos = getMousePos(e);
     previewBox = [startX, startY, pos.x, pos.y];
     drawAll();
     return;
   }
 
   // ===== HOVER =====
-  const pos = getMousePos(e);
-const objects = getCurrentObjects();
+  const objects = getCurrentObjects();
 
-hoveredBoxIndex = -1;
-let cursor = "crosshair";
+  hoveredBoxIndex = -1;
+  let cursor = "crosshair";
 
-for (let i = objects.length - 1; i >= 0; i--) {
-  const box = objects[i].bbox;
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const box = objects[i].bbox;
 
-  if (isInsideBox(pos.x, pos.y, box)) {
-    hoveredBoxIndex = i;
+    if (isInsideBox(pos.x, pos.y, box)) {
+      hoveredBoxIndex = i;
 
-    const corner = getCorner(pos.x, pos.y, box);
-    const edge = getEdge(pos.x, pos.y, box);
+      const corner = getCorner(pos.x, pos.y, box);
+      const edge = getEdge(pos.x, pos.y, box);
 
-    if (corner === "tl" || corner === "br") cursor = "nwse-resize";
-    else if (corner === "tr" || corner === "bl") cursor = "nesw-resize";
-    else if (edge === "left" || edge === "right") cursor = "ew-resize";
-    else if (edge === "top" || edge === "bottom") cursor = "ns-resize";
-    else cursor = "move";
+      if (corner === "tl" || corner === "br") cursor = "nwse-resize";
+      else if (corner === "tr" || corner === "bl") cursor = "nesw-resize";
+      else if (edge === "left" || edge === "right") cursor = "ew-resize";
+      else if (edge === "top" || edge === "bottom") cursor = "ns-resize";
+      else cursor = "move";
 
-    break;
+      break;
+    }
   }
-}
 
-canvas.style.cursor = cursor;
+  canvas.style.cursor = cursor;
 
   drawAll();
 };
@@ -527,13 +682,19 @@ canvas.onmouseup = (e) => {
     return;
   }
 
-  if (!drawing) return;
+  if (!previewBox) return;
 
   const pos = getMousePos(e);
 
-  // ===== TẠO BOX =====
+  const dx = Math.abs(pos.x - startX);
+  const dy = Math.abs(pos.y - startY);
+  if (dx < 2 && dy < 2) {
+    previewBox = null;
+    return;
+  }
+
   const newBox = {
-    class: lastSelectedClass || "", // 🔥 dùng class gần nhất (nếu có)
+    class: lastSelectedClass || "",
     bbox: [startX, startY, pos.x, pos.y]
   };
 
@@ -543,19 +704,23 @@ canvas.onmouseup = (e) => {
   drawing = false;
   previewBox = null;
 
+  if (window.markDirty) window.markDirty();
+
   drawAll();
   renderBBoxList();
 
-  // ===== LUÔN HIỆN DROPDOWN (NHƯNG CÓ DEFAULT) =====
-  const rect = canvas.getBoundingClientRect();
+  // ===== UPDATE META =====
+  updateImageMeta();
 
+  // ===== CLASS PICK =====
   showFloatingClass(
     e.clientX,
     e.clientY,
     (selectedClass) => {
       newBox.class = selectedClass;
+      lastSelectedClass = selectedClass;
 
-      lastSelectedClass = selectedClass; // 🔥 update memory
+      updateImageMeta(); // 🔥 FIX CHÍNH
 
       if (window.markDirty) window.markDirty();
 
@@ -610,7 +775,7 @@ window.markDirty = function () {
   if (btn) {
     btn.disabled = false;
     btn.style.opacity = 1;
-  }
+  };
 
   console.log("DIRTY TRUE");
 };
@@ -627,14 +792,25 @@ canvas.addEventListener("wheel", (e) => {
 // ================= SAVE =================
 window.save = async function () {
   const objects = getCurrentObjects();
-  if (!objects.length) return;
+
+  if (!objects || !objects.length) return;
+
+  const currentPath = getKey();
+
+  // 🔥 FIX CHỐNG CRASH
+  if (!currentPath) {
+    console.warn("Save skipped: no image");
+    return;
+  }
+
+  const imageName = currentPath.split("/").pop();
 
   await fetch(`/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       project: currentProject,
-      image: images[index].split("/").pop(),
+      image: imageName,
       objects,
       classes,
       width: img.width,
@@ -647,41 +823,136 @@ window.save = async function () {
 let currentProject = "";
 
 window.createProject = async function () {
-  const name = document.getElementById("projectName").value;
-  if (!name) return;
+  const nameInput = document.getElementById("projectName");
+  const name = nameInput.value.trim();
 
-  await fetch(`/create_project?name=${name}`, { method: "POST" });
+  if (!name) {
+    alert("Nhập tên project");
+    return;
+  }
 
-  currentProject = name;
-  classes = [];
-  renderClassSelect();
+  try {
+    // ===== CREATE PROJECT =====
+    await fetch(`/create_project?name=${name}`, {
+      method: "POST"
+    });
 
-  alert("Project created!");
+    // ===== RESET STATE =====
+    currentProject = name;
+    classes = [];
+    annotations = {};
+    images = [];
+    index = 0;
+
+    renderClassSelect();
+
+    // ===== RELOAD DROPDOWN =====
+    await loadProjects();
+
+    // ===== AUTO SELECT PROJECT MỚI =====
+    const select = document.getElementById("projectSelect");
+    select.value = name;
+
+    // ===== LOAD DATA =====
+    await loadImagesFromProject();
+
+    // ===== CLEAR INPUT =====
+    nameInput.value = "";
+
+    console.log("Created project:", name);
+
+  } catch (err) {
+    console.error("Create project error:", err);
+    alert("Lỗi tạo project!");
+  }
 };
+
+async function loadProjects() {
+  try {
+    const res = await fetch("/projects");
+    const projects = await res.json();
+
+    const select = document.getElementById("projectSelect");
+
+    // clear cũ
+    select.innerHTML = "";
+
+    projects.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    console.error("Load projects error:", err);
+  }
+}
+
+async function loadBatches() {
+  if (!currentProject) return;
+
+  const res = await fetch(`/batches?project=${currentProject}`);
+  const batches = await res.json();
+
+  const select = document.getElementById("batchSelect");
+  select.innerHTML = '<option value="all">All batch</option>';
+
+  batches.forEach(b => {
+    const opt = document.createElement("option");
+    opt.value = b;
+    opt.textContent = b;
+    select.appendChild(opt);
+  });
+}
 
 window.uploadFolder = async function () {
   if (!currentProject) return alert("Tạo project trước!");
 
   const files = document.getElementById("folderInput").files;
-  const formData = new FormData();
 
-  for (let f of files) formData.append("files", f);
+  if (!files.length) return alert("Chưa chọn file!");
 
-  await fetch(`/upload?project=${currentProject}`, {
-    method: "POST",
-    body: formData
-  });
+  const BATCH_SIZE = 50;
 
-  loadImagesFromProject();
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = Array.from(files).slice(i, i + BATCH_SIZE);
+
+    const formData = new FormData();
+
+    batch.forEach(f => formData.append("files", f));
+
+    const res = await fetch(`/upload?project=${currentProject}`, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    console.log("Uploaded batch:", data);
+  }
+
+  await loadImagesFromProject();
 };
 
 async function loadImagesFromProject() {
+  await loadBatches();
   const res = await fetch(`/images?project=${currentProject}`);
   const data = await res.json();
 
-  images = data.map(name => `/datasets/${currentProject}/images/${name}`);
-  index = 0;
-  loadImage();
+  imageMeta = data;
+  updateFilterCount();
+  images = data
+  .filter(x => x.path) // 🔥 bỏ undefined
+  .map(x => `/datasets/${x.path}`);
+
+  // 🔥 QUAN TRỌNG
+  if (viewMode === "grid") {
+    renderGrid();
+  } else {
+    index = 0;
+    loadImage();
+    updateImageCounter();
+  }
 }
 
 // ================= PROJECT LIST =================
@@ -702,10 +973,41 @@ async function loadProjectList() {
   });
 }
 
-async function loadAnnotations() {
-  if (!currentProject || !images.length) return;
+async function loadModels() {
+  try {
+    const res = await fetch("/models");
+    const models = await res.json();
 
-  const imageName = images[index].split("/").pop();
+    const select = document.getElementById("modelSelect");
+    if (!select) return;
+
+    select.innerHTML = "";
+
+    if (!models.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.innerText = "No model";
+      select.appendChild(opt);
+      return;
+    }
+
+    models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.innerText = m;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    console.error("Load models error:", err);
+  }
+}
+
+async function loadAnnotations() {
+  if (!currentProject) return;
+  if (!currentImage) return;
+
+  const imageName = currentImage.split("/").pop();
 
   const res = await fetch(`/annotations?project=${currentProject}&image=${imageName}`);
   const data = await res.json();
@@ -715,7 +1017,6 @@ async function loadAnnotations() {
   data.forEach(obj => {
     const [xc, yc, w, h] = obj.bbox;
 
-    // convert YOLO → pixel
     const x1 = (xc - w/2) * img.width;
     const y1 = (yc - h/2) * img.height;
     const x2 = (xc + w/2) * img.width;
@@ -727,12 +1028,12 @@ async function loadAnnotations() {
     });
   });
 
-  annotations[getKey()] = objects;
+  annotations[currentImage] = objects; // 🔥 KEY ỔN ĐỊNH
 
+  updateImageMeta();
   drawAll();
   renderBBoxList();
 }
-
 // ================= LOAD PROJECT =================
 window.loadProject = async function () {
   const select = document.getElementById("projectSelect");
@@ -757,21 +1058,25 @@ window.loadProject = async function () {
 
 // ================= NAVIGATION =================
 window.nextImage = function () {
-  if (index < images.length - 1) {
-    save(); // auto save trước khi chuyển
+  const list = getFilteredImages();
+  if (!list.length) return;
 
-    index++;
-    loadImage();
-  }
+  if (getKey()) save();
+
+  index = (index + 1) % list.length;
+
+  loadImage();
 };
 
 window.prevImage = function () {
-  if (index > 0) {
-    save();
+  const list = getFilteredImages();
+  if (!list.length) return;
 
-    index--;
-    loadImage();
-  }
+  if (getKey()) save();
+
+  index = (index - 1 + list.length) % list.length;
+
+  loadImage();
 };
 
 window.resetView = function () {
@@ -839,12 +1144,7 @@ window.exportDataset = async function () {
 let isDirty = false;
 
 // override add object để detect change
-const originalPush = Array.prototype.push;
-Array.prototype.push = function (...args) {
-  isDirty = true;
-  updateSaveButton();
-  return originalPush.apply(this, args);
-};
+window.markDirty();
 
 // override splice (delete)
 const originalSplice = Array.prototype.splice;
@@ -883,6 +1183,7 @@ const _nextImage = window.nextImage;
 window.nextImage = async function () {
   await autoSaveIfNeeded();
   _nextImage();
+
 };
 
 const _prevImage = window.prevImage;
@@ -954,28 +1255,69 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") {
     e.preventDefault();
     nextImage();
+    updateImageCounter();
   }
 
   // ===== PREV (←) =====
   if (e.key === "ArrowLeft") {
     e.preventDefault();
     prevImage();
+    updateImageCounter();
   }
 
 });
 
 document.addEventListener("click", (e) => {
+  // 🔥 nếu click từ canvas → KHÔNG tắt
+  if (e.target === canvas) return;
 
-  // 🔥 nếu đang chọn class thì bỏ qua click đầu tiên
-  if (isChoosingClass) {
-    isChoosingClass = false;
-    return;
-  }
-
-  if (!floatingClass.contains(e.target)) {
+  if (floatingClass.style.display === "block" && !floatingClass.contains(e.target)) {
     floatingClass.style.display = "none";
   }
 });
+
+function updateImageMeta() {
+  const key = getKey();
+
+  // 🔥 FIX CHỐNG CRASH
+  if (!key) return;
+
+  const currentPath = key.replace("/datasets/", "");
+
+  const meta = imageMeta.find(m => currentPath.endsWith(m.path));
+
+  if (meta) {
+    const objects = getCurrentObjects();
+
+    const valid = objects.filter(o => o.class);
+
+    meta.count = valid.length;
+    meta.labeled = valid.length > 0;
+  }
+
+  updateFilterCount();
+}
+
+function updateImageCounter() {
+  const list = getFilteredImages();
+
+  if (!list.length) {
+    document.getElementById("imageCounter").innerText = "0 / 0";
+    return;
+  }
+
+  const current = list[index];
+
+  let i = index;
+
+  if (i < 0 || i >= list.length) {
+    index = 0;
+    i = 0;
+  }
+
+  document.getElementById("imageCounter").innerText =
+    `${i + 1} / ${list.length}`;
+}
 
 function renderBBoxList() {
   const list = document.getElementById("bboxList");
@@ -1009,7 +1351,6 @@ function renderBBoxList() {
     label.className = "bbox-label";
     label.textContent = obj.class;
 
-    // màu giống canvas
     label.style.background = color;
     label.style.color = getTextColor(color);
 
@@ -1035,10 +1376,14 @@ function renderBBoxList() {
       select.onchange = () => {
         obj.class = select.value;
 
+        updateImageMeta(); // 🔥 FIX
+
         if (window.markDirty) window.markDirty();
 
         drawAll();
         renderBBoxList();
+
+        if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
       };
 
       select.onblur = () => {
@@ -1059,6 +1404,8 @@ function renderBBoxList() {
 
       objects.splice(i, 1);
 
+      updateImageMeta(); // 🔥 FIX QUAN TRỌNG
+
       if (window.markDirty) window.markDirty();
 
       selectedBoxIndex = -1;
@@ -1066,6 +1413,8 @@ function renderBBoxList() {
 
       drawAll();
       renderBBoxList();
+
+      if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
     };
 
     // ===== CLICK → SELECT =====
@@ -1082,16 +1431,220 @@ function renderBBoxList() {
 
     list.appendChild(item);
 
-    // ===== AUTO SCROLL TO SELECT =====
+    // ===== AUTO SCROLL =====
     if (isSelected) {
       setTimeout(() => {
         item.scrollIntoView({ block: "nearest" });
       }, 0);
     }
   });
+
+  // 🔥 đảm bảo sync cuối cùng
+  updateImageMeta();
 }
+
+function updateFilterCount() {
+  let list = imageMeta;
+
+  if (selectedBatch !== "all") {
+    list = list.filter(m => m.path.includes(`/${selectedBatch}/`)); // 🔥 CHUẨN NHẤT
+  }
+
+  const total = list.length;
+  const labeled = list.filter(x => x.labeled).length;
+  const unlabeled = total - labeled;
+
+  document.getElementById("btnAll").innerText = `All (${total})`;
+  document.getElementById("btnLabeled").innerText = `Labeled (${labeled})`;
+  document.getElementById("btnUnlabeled").innerText = `Unlabeled (${unlabeled})`;
+}
+
+function renderGrid() {
+  const grid = document.getElementById("gridView");
+  const pagination = document.getElementById("pagination");
+
+  const list = getFilteredImages();
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+
+  const pageItems = list.slice(start, end);
+
+  grid.innerHTML = "";
+
+  pageItems.forEach((imgPath, idx) => {
+    const div = document.createElement("div");
+    div.className = "grid-item";
+
+    const meta = imageMeta.find(m => `/datasets/${m.path}` === imgPath);
+
+    div.classList.add(meta && meta.labeled ? "labeled" : "unlabeled");
+
+    const imgEl = document.createElement("img");
+    imgEl.src = imgPath;
+
+    div.appendChild(imgEl);
+
+    div.onclick = () => {
+      viewMode = "single";
+
+      document.getElementById("canvas").style.display = "block";
+      grid.style.display = "none";
+      pagination.style.display = "none";
+      document.getElementById("bboxSidebar").style.display = "block";
+
+      index = start + idx; // 🔥 CHUẨN
+
+      loadImage();
+    };
+
+    grid.appendChild(div);
+  });
+
+  renderPagination(list.length);
+  pagination.style.display = "flex";
+}
+
+
+function renderPagination(total) {
+  const pagination = document.getElementById("pagination");
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  pagination.innerHTML = "";
+
+  for (let i = 1; i <= totalPages; i++) {
+    const btn = document.createElement("button");
+    btn.className = "page-btn";
+    btn.innerText = i;
+
+    if (i === currentPage) btn.classList.add("active");
+
+    btn.onclick = () => {
+      currentPage = i;
+      renderGrid();
+    };
+
+    pagination.appendChild(btn);
+  }
+}
+
+window.autoDetect = async function () {
+  if (!currentImage) return;
+
+  const model = document.getElementById("modelSelect").value;
+
+// 🔥 nếu đổi model → reset confirm
+if (model !== lastModel) {
+  autoModelConfirmed = false;
+  lastModel = model;
+}
+
+// 🔥 confirm
+if (!autoModelConfirmed) {
+  const ok = confirm(`Đang dùng model: ${model}\nXác nhận chạy AUTO?`);
+  if (!ok) return;
+
+  autoModelConfirmed = true;
+}
+
+  try {
+    // ===== LOAD IMAGE =====
+    const res = await fetch(currentImage);
+    const blob = await res.blob();
+
+    const formData = new FormData();
+    formData.append("file", blob, "image.jpg");
+    formData.append("model", model);
+
+    // ===== CALL API =====
+    const response = await fetch("/auto_detect", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+
+    const objects = getCurrentObjects();
+
+    // ===== SET / MERGE CLASSES =====
+    if (!classes || classes.length === 0) {
+      classes = data.classes || [];
+    } else {
+      (data.classes || []).forEach(c => {
+        if (!classes.includes(c)) {
+          classes.push(c);
+        }
+      });
+    }
+    renderClassSelect();
+
+    // ===== ADD DETECTIONS =====
+    (data.detections || []).forEach(det => {
+      objects.push({
+        class: det.class,
+        bbox: det.bbox
+      });
+    });
+
+    // ===== UPDATE UI =====
+    updateImageMeta();
+
+    // 🔥 QUAN TRỌNG NHẤT
+    if (window.markDirty) window.markDirty();
+
+    drawAll();
+    renderBBoxList();
+
+  } catch (err) {
+    console.error("Auto detect error:", err);
+    alert("Auto detect lỗi");
+  }
+};
+
+window.uploadModel = async function () {
+  const input = document.getElementById("modelUpload");
+
+  input.click();
+
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".pt")) {
+      alert("Chỉ upload file .pt");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/upload_model", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (data.status === "uploaded") {
+        alert("Upload model OK: " + data.model);
+
+        // 🔥 reload dropdown
+        loadModels();
+      } else {
+        alert(data.msg);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert("Upload lỗi");
+    }
+  };
+};
 
 // ================= INIT =================
 renderClassSelect();
 loadProjectList();
+loadModels(); // 🔥 THÊM DÒNG NÀY
 loadAnnotations();

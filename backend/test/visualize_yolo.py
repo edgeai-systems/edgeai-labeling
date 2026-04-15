@@ -1,38 +1,39 @@
 import os
 import cv2
-import json
 
 # ================= CONFIG =================
-BASE_PATH = "../datasets/test1"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+BASE_PATH = r"D:\anhpnh\#AI\edgeai-labeling\backend\test\car_vn_2026-04-15_17-00-48"
 
 IMAGE_DIR = os.path.join(BASE_PATH, "images")
 LABEL_DIR = os.path.join(BASE_PATH, "labels")
+CLASS_PATH = os.path.join(BASE_PATH, "classes.txt")
+
+print("BASE_PATH:", BASE_PATH)
+print("IMAGE_DIR exists:", os.path.exists(IMAGE_DIR))
+print("LABEL_DIR exists:", os.path.exists(LABEL_DIR))
+print("CLASS_PATH exists:", os.path.exists(CLASS_PATH))
 
 MAX_W = 1200
 MAX_H = 800
 
-SHOW_CLASS_NAME = True
 LINE_THICKNESS = 2
+SHOW_CLASS_NAME = True
 
-SCALE_UP = 3  # 🔥 QUAN TRỌNG (2~4)
+# ================= LOAD CLASSES =================
+def load_classes(path):
+    if not os.path.exists(path):
+        print("❌ classes.txt not found")
+        return []
 
-# ================= LOAD CLASS =================
-def load_classes():
-    json_path = os.path.join(BASE_PATH, "classes.json")
-    txt_path = os.path.join(BASE_PATH, "classes.txt")
+    with open(path, "r", encoding="utf-8") as f:
+        classes = [line.strip() for line in f.readlines()]
 
-    if os.path.exists(json_path):
-        with open(json_path, "r") as f:
-            return json.load(f)
+    print("✅ Loaded classes:", classes)
+    return classes
 
-    elif os.path.exists(txt_path):
-        with open(txt_path, "r") as f:
-            return [line.strip() for line in f.readlines()]
-
-    return []
-
-CLASS_NAMES = load_classes()
-print("Loaded classes:", CLASS_NAMES)
+CLASS_NAMES = load_classes(CLASS_PATH)
 
 # ================= COLOR =================
 def get_color(cls_id):
@@ -46,6 +47,20 @@ def get_color(cls_id):
     ]
     return colors[cls_id % len(colors)]
 
+# ================= YOLO → PIXEL =================
+def yolo_to_pixel(cls_id, xc, yc, bw, bh, img_w, img_h):
+    x_center = xc * img_w
+    y_center = yc * img_h
+    box_w = bw * img_w
+    box_h = bh * img_h
+
+    x1 = int(x_center - box_w / 2)
+    y1 = int(y_center - box_h / 2)
+    x2 = int(x_center + box_w / 2)
+    y2 = int(y_center + box_h / 2)
+
+    return x1, y1, x2, y2
+
 # ================= DRAW =================
 def draw_yolo(image_path, label_path):
     img = cv2.imread(image_path)
@@ -53,15 +68,6 @@ def draw_yolo(image_path, label_path):
     if img is None:
         print("❌ Cannot read:", image_path)
         return None
-
-    # 🔥 SCALE ẢNH TRƯỚC (QUAN TRỌNG NHẤT)
-    img = cv2.resize(
-        img,
-        None,
-        fx=SCALE_UP,
-        fy=SCALE_UP,
-        interpolation=cv2.INTER_NEAREST
-    )
 
     h, w = img.shape[:2]
 
@@ -73,23 +79,16 @@ def draw_yolo(image_path, label_path):
 
     for line in lines:
         parts = line.strip().split()
-        if len(parts) != 5:
+
+        if len(parts) < 5:
             continue
 
-        cls_id, xc, yc, bw, bh = map(float, parts)
+        cls_id, xc, yc, bw, bh = map(float, parts[:5])
         cls_id = int(cls_id)
 
-        # YOLO → pixel (sau khi scale)
-        x_center = xc * w
-        y_center = yc * h
-        box_w = bw * w
-        box_h = bh * h
+        x1, y1, x2, y2 = yolo_to_pixel(cls_id, xc, yc, bw, bh, w, h)
 
-        x1 = int(x_center - box_w / 2)
-        y1 = int(y_center - box_h / 2)
-        x2 = int(x_center + box_w / 2)
-        y2 = int(y_center + box_h / 2)
-
+        # clamp
         x1 = max(0, x1)
         y1 = max(0, y1)
         x2 = min(w, x2)
@@ -97,7 +96,7 @@ def draw_yolo(image_path, label_path):
 
         color = get_color(cls_id)
 
-        # bbox rõ hơn
+        # draw bbox
         cv2.rectangle(img, (x1, y1), (x2, y2), color, LINE_THICKNESS)
 
         # label
@@ -106,33 +105,36 @@ def draw_yolo(image_path, label_path):
         else:
             label = str(cls_id)
 
-        # 🔥 FONT SCALE SAU KHI SCALE ẢNH
-        font_scale = 0.6
+        text = f"{label}"
 
+        # text position
         text_x = x1
-        text_y = y1 - 5 if y1 > 20 else y2 + 20
+        text_y = y1 - 10 if y1 > 20 else y2 + 20
 
-        # viền đen (rất quan trọng)
+        # viền đen
         cv2.putText(
             img,
-            label,
+            text,
             (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            (0,0,0),
+            0.7,
+            (0, 0, 0),
             3
         )
 
         # chữ màu
         cv2.putText(
             img,
-            label,
+            text,
             (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
+            0.7,
             color,
-            1
+            2
         )
+
+        # debug log
+        print(f"✔ class_id={cls_id}, label={label}, box=({x1},{y1},{x2},{y2})")
 
     return img
 
@@ -155,9 +157,12 @@ def main():
             continue
 
         image_path = os.path.join(IMAGE_DIR, filename)
-        label_path = os.path.join(LABEL_DIR, filename.rsplit(".", 1)[0] + ".txt")
+        label_path = os.path.join(
+            LABEL_DIR,
+            filename.rsplit(".", 1)[0] + ".txt"
+        )
 
-        print(f"🔍 Checking: {filename}")
+        print(f"\n🔍 Checking: {filename}")
 
         img = draw_yolo(image_path, label_path)
 
@@ -171,16 +176,17 @@ def main():
 
         key = cv2.waitKey(0)
 
-        if key == 27:
+        if key == 27:  # ESC
             break
-        elif key == ord('a'):
+        elif key == ord('a'):  # back
             i = max(0, i - 1)
-        elif key == ord('d'):
+        elif key == ord('d'):  # next
             i += 1
         else:
             i += 1
 
     cv2.destroyAllWindows()
 
+# ================= RUN =================
 if __name__ == "__main__":
     main()

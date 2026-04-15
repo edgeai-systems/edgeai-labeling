@@ -21,7 +21,7 @@
     </div>
 
     <div class="toolbar-group">
-      <input type="file" id="folderInput" webkitdirectory multiple />
+      <input type="file" id="folderInput" multiple accept=".jpg,.jpeg,.png" />
       <button onclick="uploadFolder()">Upload</button>
     </div>
 
@@ -33,10 +33,16 @@
       <button class="btn-danger" onclick="deleteSelected()">Delete</button>
     </div>
 
+
     <div class="toolbar-group">
       <button onclick="prevImage()">Prev</button>
       <button onclick="nextImage()">Next</button>
-      <button onclick="autoDetect()">Auto</button>
+      <div style="display:inline-flex; gap:6px; align-items:center;">
+  <select id="modelSelect"></select>
+        <input type="file" id="modelUpload" accept=".pt" style="display:none">
+<button onclick="uploadModel()">Upload Model</button>
+  <button onclick="autoDetect()">Auto</button>
+</div>
     </div>
 
     <div class="toolbar-group">
@@ -45,6 +51,16 @@
       <button onclick="clearLast()">Undo</button>
       <button class="btn-primary" onclick="exportDataset()">Export</button>
     </div>
+
+   <div class="toolbar-group filter-group">
+  <button class="filter-btn active" id="btnAll" onclick="setFilter('all', this)">All</button>
+<button class="filter-btn" id="btnLabeled" onclick="setFilter('labeled', this)">Labeled</button>
+<button class="filter-btn" id="btnUnlabeled" onclick="setFilter('unlabeled', this)">Unlabeled</button>
+     <span id="imageCounter" style="margin-left:10px;"></span>
+     <select id="batchSelect" onchange="onBatchChange(this.value)" style="margin-left:10px;">
+  <option value="all">All batch</option>
+</select>
+</div>
 
   </div>
 
@@ -55,6 +71,11 @@
     <div class="canvas-container">
       <canvas id="canvas"></canvas>
     </div>
+
+<div id="gridWrapper">
+  <div id="gridView" class="grid-view"></div>
+  <div id="pagination" class="pagination"></div>
+</div>
 
     <!-- SIDEBAR -->
     <div id="bboxSidebar" class="bbox-sidebar">
