@@ -1,8 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 from fastapi import Form
+from pydantic import BaseModel
+from ultralytics import YOLO
+import numpy as np
+import cv2
 
 import os
 import zipfile
@@ -11,6 +14,7 @@ import json
 from datetime import datetime
 
 ALLOWED_EXT = [".jpg", ".jpeg", ".png"]
+model_cache = {}
 
 app = FastAPI()
 
@@ -35,6 +39,33 @@ async def create_project(name: str):
     os.makedirs(os.path.join(project_path, "labels"), exist_ok=True)
 
     return {"status": "created"}
+
+
+@app.post("/upload_model")
+async def upload_model(file: UploadFile = File(...)):
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
+    os.makedirs(model_dir, exist_ok=True)
+
+    filename = os.path.basename(file.filename)
+
+    # ===== CHECK EXT =====
+    if not filename.endswith(".pt"):
+        return {"status": "error", "msg": "Only .pt allowed"}
+
+    save_path = os.path.join(model_dir, filename)
+
+    # ===== 🔥 CHECK TRÙNG =====
+    if os.path.exists(save_path):
+        return {"status": "error", "msg": "Model already exists"}
+
+    # ===== SAVE FILE =====
+    with open(save_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # ===== 🔥 CLEAR CACHE =====
+    model_cache.pop(filename, None)
+
+    return {"status": "uploaded", "model": filename}
 
 # ================= UPLOAD =================
 @app.post("/upload")
@@ -178,13 +209,28 @@ async def save(data: SaveRequest):
 
     return {"status": "saved"}
 
+import re
+
 @app.get("/projects")
 async def list_projects():
     if not os.path.exists(BASE_DIR):
         return []
 
-    return [d for d in os.listdir(BASE_DIR)
-            if os.path.isdir(os.path.join(BASE_DIR, d))]
+    projects = []
+
+    for d in os.listdir(BASE_DIR):
+        path = os.path.join(BASE_DIR, d)
+
+        if not os.path.isdir(path):
+            continue
+
+        # 🔥 bỏ export (có timestamp)
+        if re.search(r"\d{4}-\d{2}-\d{2}", d):
+            continue
+
+        projects.append(d)
+
+    return projects
 
 @app.get("/classes")
 async def get_classes(project: str):
@@ -195,6 +241,15 @@ async def get_classes(project: str):
             return json.load(f)
 
     return []
+
+@app.get("/models")
+async def list_models():
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
+
+    if not os.path.exists(model_dir):
+        return []
+
+    return [f for f in os.listdir(model_dir) if f.endswith(".pt")]
 
 @app.get("/batches")
 def list_batches(project: str):
@@ -342,3 +397,47 @@ async def export(project: str):
                 z.write(full, rel)
 
     return FileResponse(zip_path, filename=os.path.basename(zip_path))
+
+
+def get_model(model_name):
+    if model_name not in model_cache:
+        path = os.path.join(os.path.dirname(__file__), "models", model_name)
+        model_cache[model_name] = YOLO(path)
+    return model_cache[model_name]
+
+@app.post("/auto_detect")
+async def auto_detect(
+    model: str = Form(...),
+    file: UploadFile = File(...)
+):
+    contents = await file.read()
+
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    yolo = get_model(model)
+
+    results = yolo(img)[0]
+
+    detections = []
+
+    names = yolo.names
+
+    # 🔥 FIX: convert dict → list
+    if isinstance(names, dict):
+        names = [names[i] for i in sorted(names.keys())]
+
+    for box in results.boxes:
+        cls_id = int(box.cls[0])
+        x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+        detections.append({
+            "class": names[cls_id],
+            "class_id": cls_id,
+            "bbox": [x1, y1, x2, y2]
+        })
+
+    return {
+        "detections": detections,
+        "classes": names
+    }

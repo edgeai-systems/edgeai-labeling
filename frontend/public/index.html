@@ -33,10 +33,16 @@
       <button class="btn-danger" onclick="deleteSelected()">Delete</button>
     </div>
 
+
     <div class="toolbar-group">
       <button onclick="prevImage()">Prev</button>
       <button onclick="nextImage()">Next</button>
-      <button onclick="autoDetect()">Auto</button>
+      <div style="display:inline-flex; gap:6px; align-items:center;">
+  <select id="modelSelect"></select>
+        <input type="file" id="modelUpload" accept=".pt" style="display:none">
+<button onclick="uploadModel()">Upload Model</button>
+  <button onclick="autoDetect()">Auto</button>
+</div>
     </div>
 
     <div class="toolbar-group">

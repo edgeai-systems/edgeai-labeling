@@ -1,0 +1,8 @@
+container
+oto
+xe_ba_gac
+xe_khach
+xe_may
+xe_tai
+xe_canh_sat
+xe_van
