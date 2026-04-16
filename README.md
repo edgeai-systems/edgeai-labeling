@@ -47,15 +47,13 @@ Built for developers who want **speed, automation, and clean workflow**.
 
 ## ✨ Features
 
-* 🧠 Auto labeling using YOLOv8
+- 🧠 Auto labeling using YOLOv8
 - 📦 Export in YOLO format (ready for training)  
   > ⚠️ Note: Please split your dataset into **train / val / test** before training your model.
-* 🖱️ Multi-object bounding box labeling
-* ⚡ Fast image navigation (next / prev)
-* 🎯 ROI-ready (easy to extend)
-* 🧩 Clean and minimal UI
-
----
+- 🖱️ Multi-object bounding box labeling
+- ⚡ Fast image navigation (next / prev)
+- 🎯 ROI-ready (easy to extend)
+- 🧩 Clean and minimal UI
 
 ## 🎯 Use Cases
 
