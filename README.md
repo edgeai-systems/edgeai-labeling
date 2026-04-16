@@ -57,12 +57,14 @@ Built for developers who want **speed, automation, and clean workflow**.
 
 ## 🤔 Why not CVAT / Label Studio?
 
+Most existing tools are powerful but often too heavy for quick iteration.
+
 - ⚡ Much lighter setup
 - 🎯 YOLO-focused workflow
 - 🚀 Faster for small/medium datasets
 - 🧠 Built-in auto labeling (not just manual)
 
-Perfect for developers who want speed over complexity.
+> ⚡ Designed for speed, not complexity.
 
 ## 🎯 Use Cases
 
