@@ -47,6 +47,11 @@ Built for developers who want **speed, automation, and clean workflow**.
 - Manual labeling: minutes per image
 - Auto labeling: seconds per image ⚡
 ---
+## 💬 What users say
+
+>"Finally some automation for labels" 🔥
+
+---
 ## ⚡ Try it in 30 seconds
 
 1. Start backend
