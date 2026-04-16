@@ -236,14 +236,16 @@ If this project helps you, consider supporting development ❤️
 > Your support helps maintain and improve this project 🚀
 
 ---
+## ☕ Support this project
 
-### 🌍 International
+If this tool saves you hours of manual labeling, consider buying me a coffee ☕  
+Even a small support helps keep this project alive 🚀
+---
+## 🌍 International
 
 * PayPal: https://paypal.me/anhpnh
-
 ---
-
-### 🇻🇳 Vietnam (MoMo / Bank QR)
+## 🇻🇳 Vietnam (MoMo / Bank QR)
 
 Scan QR below:
 
