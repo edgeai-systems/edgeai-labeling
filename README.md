@@ -55,6 +55,15 @@ Built for developers who want **speed, automation, and clean workflow**.
 - 🎯 ROI-ready (easy to extend)
 - 🧩 Clean and minimal UI
 
+## 🤔 Why not CVAT / Label Studio?
+
+- ⚡ Much lighter setup
+- 🎯 YOLO-focused workflow
+- 🚀 Faster for small/medium datasets
+- 🧠 Built-in auto labeling (not just manual)
+
+Perfect for developers who want speed over complexity.
+
 ## 🎯 Use Cases
 
 * 🚗 Smart Parking Systems
