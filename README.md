@@ -2,10 +2,8 @@
   <img src="docs/logo_transparent_hd.png" alt="EdgeAI Systems" width="180"/>
 </p>
 
-<h1 align="center">🚀 EdgeAI Labeling</h1>
-
 <p align="center">
-  Lightweight YOLO-based data labeling tool with AI-assisted auto annotation
+⚡ Auto-label images in seconds using YOLO — stop drawing bounding boxes manually
 </p>
 
 <p align="center">
@@ -44,7 +42,19 @@ Built for developers who want **speed, automation, and clean workflow**.
 ![Manual Label](docs/custom.gif)
 
 ---
+### 🆚 Manual vs Auto
 
+- Manual labeling: minutes per image
+- Auto labeling: seconds per image ⚡
+---
+## ⚡ Try it in 30 seconds
+
+1. Start backend
+2. Upload an image
+3. Click AUTO
+4. Done 🎯
+
+---
 ## ✨ Features
 
 - 🧠 Auto labeling using YOLOv8
