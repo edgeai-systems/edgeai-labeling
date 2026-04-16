@@ -70,6 +70,7 @@ Built for developers who want **speed, automation, and clean workflow**.
 - 🎯 ROI-ready (easy to extend)
 - 🧩 Clean and minimal UI
 
+---
 ## 🤔 Why not CVAT / Label Studio?
 
 Most existing tools are powerful but often too heavy for quick iteration.
@@ -80,7 +81,7 @@ Most existing tools are powerful but often too heavy for quick iteration.
 - 🧠 Built-in auto labeling (not just manual)
 
 > ⚡ Designed for speed, not complexity.
-
+---
 ## 🎯 Use Cases
 
 * 🚗 Smart Parking Systems
@@ -231,7 +232,7 @@ Compatible with:
 ## ☕ Support this project
 
 >If this tool saves you hours of manual labeling, consider buying me a coffee ☕  
-Even a small support helps keep this project alive 🚀
+>Even a small support helps keep this project alive 🚀
 ---
 ## 🌍 International
 
