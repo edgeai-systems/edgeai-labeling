@@ -228,17 +228,9 @@ Compatible with:
 * CPU is sufficient for testing (GPU optional)
 
 ---
-
-## 💸 Support / Donate
-
-If this project helps you, consider supporting development ❤️
-
-> Your support helps maintain and improve this project 🚀
-
----
 ## ☕ Support this project
 
-If this tool saves you hours of manual labeling, consider buying me a coffee ☕  
+>If this tool saves you hours of manual labeling, consider buying me a coffee ☕  
 Even a small support helps keep this project alive 🚀
 ---
 ## 🌍 International
