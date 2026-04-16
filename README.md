@@ -25,7 +25,7 @@ Built for developers who want **speed, automation, and clean workflow**.
 ## 💡 Why EdgeAI Labeling?
 
 - ⚡ Faster than traditional labeling tools (manual → AI-assisted)
-- 🪶 Lightweight compared to heavy tools like CVAT
+- ⚡ Lightweight compared to heavy tools like CVAT
 - 🎯 Designed for real-world use (parking, traffic, ANPR)
 - 🧠 Built for developers who want speed and automation
 
@@ -46,6 +46,11 @@ Built for developers who want **speed, automation, and clean workflow**.
 
 - Manual labeling: minutes per image
 - Auto labeling: seconds per image ⚡
+---
+## 💬 What users say
+
+>"Finally some automation for labels" 🔥
+
 ---
 ## ⚡ Try it in 30 seconds
 
