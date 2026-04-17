@@ -6,7 +6,10 @@ const floatingClass = document.getElementById("floatingClass");
 let isChoosingClass = false;
 let viewMode = "single"; // single | grid
 let currentPage = 1;
-const PAGE_SIZE = 9;
+const cols = Math.floor(window.innerWidth / 160);
+const rows = Math.floor(window.innerHeight / 140);
+
+const PAGE_SIZE = cols * rows;
 let selectedBatch = "all";
 let currentImage = null;
 let mouseX = null;
@@ -318,15 +321,23 @@ function getEdge(x, y, box) {
 function loadImage() {
   const list = getFilteredImages();
 
-  if (!list.length) return;
+  if (!list.length) {
+    document.getElementById("imageIndex").innerText = "0 / 0";
+    return;
+  }
 
   if (index < 0 || index >= list.length) index = 0;
 
   const imgPath = list[index];
 
-  currentImage = imgPath; // 🔥 CHỐT KEY
+  currentImage = imgPath;
 
-  img.src = imgPath;
+  // 🔥 UPDATE COUNTER NGAY (KHÔNG CHỜ onload)
+  document.getElementById("imageIndex").innerText =
+    `${index + 1} / ${list.length}`;
+
+  // 🔥 reset onload để tránh bug
+  img.onload = null;
 
   img.onload = () => {
     const maxW = window.innerWidth * 0.8;
@@ -348,6 +359,9 @@ function loadImage() {
     renderBBoxList();
     updateImageCounter();
   };
+
+  // 🔥 FORCE RELOAD (fix case ảnh giống nhau)
+  img.src = imgPath + "?v=" + Date.now();
 }
 
 // ================= DRAW =================
@@ -1268,12 +1282,20 @@ window.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  // 🔥 nếu click từ canvas → KHÔNG tắt
+  // ✅ BỎ QUA TOÀN BỘ SELECT + OPTION
+  if (e.target.closest("select")) return;
+
+  // nếu click từ canvas → KHÔNG tắt
   if (e.target === canvas) return;
 
   if (floatingClass.style.display === "block" && !floatingClass.contains(e.target)) {
     floatingClass.style.display = "none";
   }
+});
+
+// 🔥 đảm bảo select không bị bubble
+document.querySelectorAll("select").forEach(el => {
+  el.addEventListener("mousedown", e => e.stopPropagation());
 });
 
 function updateImageMeta() {
@@ -1368,30 +1390,36 @@ function renderBBoxList() {
         select.appendChild(opt);
       });
 
+      // style
       select.style.background = "#111827";
       select.style.color = "white";
       select.style.border = "1px solid #374151";
       select.style.borderRadius = "4px";
 
+      // 🔥 QUAN TRỌNG: chặn bubble
+      select.addEventListener("mousedown", e => e.stopPropagation());
+      select.addEventListener("click", e => e.stopPropagation());
+
+      // ===== CHANGE CLASS =====
       select.onchange = () => {
         obj.class = select.value;
 
-        updateImageMeta(); // 🔥 FIX
+        updateImageMeta();
 
         if (window.markDirty) window.markDirty();
 
         drawAll();
         renderBBoxList();
 
-        if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
+        if (viewMode === "grid") renderGrid();
       };
 
-      select.onblur = () => {
-        renderBBoxList();
-      };
+      // ❌ KHÔNG dùng onblur nữa (fix bug click đè)
 
       item.replaceChild(select, label);
-      select.focus();
+
+      // focus sau khi render
+      setTimeout(() => select.focus(), 0);
     };
 
     // ===== DELETE =====
@@ -1404,7 +1432,7 @@ function renderBBoxList() {
 
       objects.splice(i, 1);
 
-      updateImageMeta(); // 🔥 FIX QUAN TRỌNG
+      updateImageMeta();
 
       if (window.markDirty) window.markDirty();
 
@@ -1414,11 +1442,14 @@ function renderBBoxList() {
       drawAll();
       renderBBoxList();
 
-      if (viewMode === "grid") renderGrid(); // 🔥 refresh grid
+      if (viewMode === "grid") renderGrid();
     };
 
     // ===== CLICK → SELECT =====
-    item.onclick = () => {
+    item.onclick = (e) => {
+      // 🔥 tránh click từ select
+      if (e.target.closest("select")) return;
+
       selectedBoxIndex = i;
       hoveredBoxIndex = i;
 
@@ -1439,7 +1470,6 @@ function renderBBoxList() {
     }
   });
 
-  // 🔥 đảm bảo sync cuối cùng
   updateImageMeta();
 }
 
