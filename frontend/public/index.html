@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+
 <html>
 <head>
   <link rel="icon" href="data:,">
@@ -11,100 +11,115 @@
 <div class="app">
 
   <!-- TOP BAR -->
+
   <div class="topbar">
 
-    <div class="toolbar-group">
-      <select id="projectSelect"></select>
-      <button onclick="loadProject()">Load</button>
-      <input id="projectName" placeholder="Project name" />
-      <button onclick="createProject()">Create</button>
-    </div>
 
-    <div class="toolbar-group">
-      <input type="file" id="folderInput" multiple accept=".jpg,.jpeg,.png" />
-      <button onclick="uploadFolder()">Upload</button>
-    </div>
+<div class="top-left">
+  <select id="projectSelect"></select>
+  <button onclick="loadProject()">Load</button>
 
-    <div class="toolbar-group">
-      <select id="classSelect"></select>
-      <input id="newClass" placeholder="New class..." />
-      <button onclick="addClass()">Add</button>
-      <button onclick="changeClassSelected()">Change</button>
-      <button class="btn-danger" onclick="deleteSelected()">Delete</button>
-    </div>
+  <input id="projectName" placeholder="Project name" />
+  <button onclick="createProject()">Create</button>
+</div>
 
+<div class="top-center">
+  <input type="file" id="folderInput" multiple accept=".jpg,.jpeg,.png" />
+  <button onclick="uploadFolder()">Upload</button>
 
-    <div class="toolbar-group">
-      <button onclick="prevImage()">Prev</button>
-      <button onclick="nextImage()">Next</button>
-      <div style="display:inline-flex; gap:6px; align-items:center;">
+  <select id="batchSelect" onchange="onBatchChange(this.value)">
+    <option value="all">All batch</option>
+  </select>
+</div>
+
+<div class="top-right">
   <select id="modelSelect"></select>
-        <input type="file" id="modelUpload" accept=".pt" style="display:none">
-<button onclick="uploadModel()">Upload Model</button>
-  <button onclick="autoDetect()">Auto</button>
-</div>
-    </div>
+  <button onclick="uploadModel()">Upload Model</button>
+  <button class="btn-primary" onclick="autoDetect()">Auto</button>
 
-    <div class="toolbar-group">
-      <button class="btn-primary" onclick="save()">Save</button>
-      <button onclick="resetView()">Reset</button>
-      <button onclick="clearLast()">Undo</button>
-      <button class="btn-primary" onclick="exportDataset()">Export</button>
-    </div>
-
-   <div class="toolbar-group filter-group">
-  <button class="filter-btn active" id="btnAll" onclick="setFilter('all', this)">All</button>
-<button class="filter-btn" id="btnLabeled" onclick="setFilter('labeled', this)">Labeled</button>
-<button class="filter-btn" id="btnUnlabeled" onclick="setFilter('unlabeled', this)">Unlabeled</button>
-     <span id="imageCounter" style="margin-left:10px;"></span>
-     <select id="batchSelect" onchange="onBatchChange(this.value)" style="margin-left:10px;">
-  <option value="all">All batch</option>
-</select>
+  <button class="btn-primary" onclick="save()">Save</button>
+  <button onclick="resetView()">Reset</button>
+  <button onclick="clearLast()">Undo</button>
+  <button onclick="exportDataset()">Export</button>
 </div>
+
 
   </div>
 
- <div class="main">
-  <div class="layout">
+  <!-- MAIN -->
 
-    <!-- CANVAS -->
-    <div class="canvas-container">
-      <canvas id="canvas"></canvas>
-    </div>
+  <div class="main">
 
-<div id="gridWrapper">
-  <div id="gridView" class="grid-view"></div>
-  <div id="pagination" class="pagination"></div>
-</div>
 
-    <!-- SIDEBAR -->
-    <div id="bboxSidebar" class="bbox-sidebar">
-      <div class="bbox-title">BBoxes</div>
-      <div id="bboxList"></div>
-    </div>
+<!-- LEFT -->
+<div class="left-panel">
+  <div class="panel-title">Classes</div>
 
+  <select id="classSelect"></select>
+  <input id="newClass" placeholder="New class..." />
+
+  <div class="class-actions">
+    <button onclick="addClass()">Add</button>
+    <button onclick="changeClassSelected()">Change</button>
+    <button class="btn-danger" onclick="deleteSelected()">Delete</button>
   </div>
+
+  <div class="filter-group">
+    <button id="btnAll" class="filter-btn active" onclick="setFilter('all', this)">All</button>
+    <button id="btnLabeled" class="filter-btn" onclick="setFilter('labeled', this)">Labeled</button>
+    <button id="btnUnlabeled" class="filter-btn" onclick="setFilter('unlabeled', this)">Unlabeled</button>
+  </div>
+
+  <div id="imageCounter"></div>
 </div>
+
+<!-- CENTER (🔥 FIX CHÍNH) -->
+<div class="center-view">
+
+  <!-- CANVAS -->
+  <div class="canvas-container">
+    <canvas id="canvas"></canvas>
+
+    <div class="bottom-bar">
+      <button onclick="prevImage()">◀</button>
+      <span id="imageIndex">1 / N</span>
+      <button onclick="nextImage()">▶</button>
     </div>
+  </div>
+
+  <!-- GRID -->
+  <div id="gridView" class="grid-view" style="display:none;"></div>
+<div id="pagination" style="display:none;"></div>
+
+</div>
+
+<!-- RIGHT -->
+<div id="bboxSidebar" class="right-panel">
+  <div class="panel-title">BBoxes</div>
+  <div id="bboxList"></div>
+</div>
+
+
   </div>
 
 </div>
 
 <select id="floatingClass"
-  style="
-    position: fixed;
-    display: none;
-    z-index: 99999;
-    background: #111827;
-    color: white;
-    border: 1px solid #374151;
-    padding: 6px;
-    border-radius: 6px;
-    min-width: 100px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-  ">
-</select>
+style="
+ position: fixed;
+ display: none;
+ z-index: 99999;
+ background: #111827;
+ color: white;
+ border: 1px solid #374151;
+ padding: 6px;
+ border-radius: 6px;
+ min-width: 100px;
+ box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+"> </select>
 
 <script src="/static/src/app.js"></script>
+
 </body>
 </html>
+
