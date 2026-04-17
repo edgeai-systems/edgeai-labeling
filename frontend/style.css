@@ -246,3 +246,8 @@ input, select {
   width: 100%;          /* 🔥 THÊM */
 }
 
+#pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}

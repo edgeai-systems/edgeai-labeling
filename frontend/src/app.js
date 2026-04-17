@@ -6,10 +6,10 @@ const floatingClass = document.getElementById("floatingClass");
 let isChoosingClass = false;
 let viewMode = "single"; // single | grid
 let currentPage = 1;
-const cols = Math.floor(window.innerWidth / 160);
-const rows = Math.floor(window.innerHeight / 140);
-
-const PAGE_SIZE = cols * rows;
+//const cols = Math.floor(window.innerWidth / 160);
+//const rows = Math.floor(window.innerHeight / 140);
+//const PAGE_SIZE = cols * rows;
+const PAGE_SIZE = 48;
 let selectedBatch = "all";
 let currentImage = null;
 let mouseX = null;
@@ -230,19 +230,17 @@ function getFilteredImages() {
 window.setFilter = function(mode, el) {
   filterMode = mode;
 
-  // active button
   document.querySelectorAll(".filter-btn").forEach(btn => {
     btn.classList.remove("active");
   });
   if (el) el.classList.add("active");
 
   const canvas = document.getElementById("canvas");
-  const grid = document.getElementById("gridView");
-  const pagination = document.getElementById("pagination");
+  const wrapper = document.getElementById("gridWrapper");
   const sidebar = document.getElementById("bboxSidebar");
 
-  // 🔥 switch mode
   if (mode === "all") {
+    // ===== SINGLE MODE =====
     viewMode = "single";
     index = 0;
 
@@ -250,27 +248,27 @@ window.setFilter = function(mode, el) {
     updateImageCounter();
 
     canvas.style.display = "block";
-    grid.style.display = "none";
-    pagination.style.display = "none";
+    wrapper.style.display = "none";
 
-    // ✅ SHOW SIDEBAR
     if (sidebar) sidebar.style.display = "block";
 
   } else {
+    // ===== GRID MODE =====
     viewMode = "grid";
     currentPage = 1;
 
     renderGrid();
 
     canvas.style.display = "none";
-    grid.style.display = "grid";
-    pagination.style.display = "flex";
+    wrapper.style.display = "flex";   // 🔥 CHỈ DÙNG WRAPPER
 
-    // ✅ HIDE SIDEBAR
     if (sidebar) sidebar.style.display = "none";
   }
+
   updateImageCounter();
 };
+
+
 // ================= UTILS =================
 function getKey() {
   return currentImage;
@@ -1507,7 +1505,6 @@ function renderGrid() {
     div.className = "grid-item";
 
     const meta = imageMeta.find(m => `/datasets/${m.path}` === imgPath);
-
     div.classList.add(meta && meta.labeled ? "labeled" : "unlabeled");
 
     const imgEl = document.createElement("img");
@@ -1519,11 +1516,10 @@ function renderGrid() {
       viewMode = "single";
 
       document.getElementById("canvas").style.display = "block";
-      grid.style.display = "none";
-      pagination.style.display = "none";
+      document.getElementById("gridWrapper").style.display = "none";
       document.getElementById("bboxSidebar").style.display = "block";
 
-      index = start + idx; // 🔥 CHUẨN
+      index = start + idx;
 
       loadImage();
     };
@@ -1532,7 +1528,6 @@ function renderGrid() {
   });
 
   renderPagination(list.length);
-  pagination.style.display = "flex";
 }
 
 
@@ -1542,6 +1537,14 @@ function renderPagination(total) {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   pagination.innerHTML = "";
+
+  // 🔥 ẨN nếu chỉ 1 page
+  if (totalPages <= 1) {
+    pagination.style.display = "none";
+    return;
+  }
+
+  pagination.style.display = "flex";
 
   for (let i = 1; i <= totalPages; i++) {
     const btn = document.createElement("button");
