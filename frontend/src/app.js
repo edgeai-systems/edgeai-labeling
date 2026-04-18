@@ -14,6 +14,8 @@ let selectedBatch = "all";
 let currentImage = null;
 let mouseX = null;
 let mouseY = null;
+let mouseCanvasX = null;
+let mouseCanvasY = null;
 let autoModelConfirmed = false;
 let lastModel = null;
 
@@ -141,19 +143,93 @@ function getTextColor(bgColor) {
 
 function renderClassSelect() {
   const select = document.getElementById("classSelect");
+  const previousValue = select.value;
   select.innerHTML = "";
 
   classes.forEach((cls, i) => {
     const option = document.createElement("option");
     option.value = cls;
     option.textContent = cls;
-    if (i === 0) option.selected = true;
+    if (cls === previousValue || (!previousValue && i === 0)) option.selected = true;
     select.appendChild(option);
 
     if (!classColors[cls]) {
       classColors[cls] = getRandomColor();
     }
   });
+
+  updateSelectedBoxEditor();
+}
+
+function setClassOptions(select, selectedValue) {
+  if (!select) return;
+
+  select.innerHTML = "";
+
+  classes.forEach(cls => {
+    const option = document.createElement("option");
+    option.value = cls;
+    option.textContent = cls;
+    if (cls === selectedValue) option.selected = true;
+    select.appendChild(option);
+  });
+
+  if (!classes.length) {
+    select.value = "";
+  } else if (!selectedValue || !classes.includes(selectedValue)) {
+    select.value = classes[0];
+  }
+}
+
+function updateSelectedBoxChangeState(currentValue) {
+  const select = document.getElementById("selectedBoxClassSelect");
+  const changeBtn = document.getElementById("selectedBoxChangeBtn");
+
+  if (!select || !changeBtn) return;
+
+  const currentClass = typeof currentValue === "string"
+    ? currentValue
+    : getCurrentObjects()[selectedBoxIndex]?.class;
+
+  const showChange = !!select.value && select.value !== (currentClass || "");
+  changeBtn.style.display = showChange ? "block" : "none";
+}
+
+function updateSelectedBoxEditor() {
+  const editor = document.getElementById("selectedBoxEditor");
+  const currentClass = document.getElementById("selectedBoxCurrentClass");
+  const currentBadge = document.getElementById("selectedBoxCurrentBadge");
+  const select = document.getElementById("selectedBoxClassSelect");
+  const changeBtn = document.getElementById("selectedBoxChangeBtn");
+
+  if (!editor || !currentClass || !currentBadge || !select || !changeBtn) return;
+
+  const objects = getCurrentObjects();
+  const selectedObject = objects[selectedBoxIndex];
+
+  if (viewMode !== "single" || selectedBoxIndex === -1 || !selectedObject) {
+    editor.style.display = "none";
+    changeBtn.style.display = "none";
+    select.innerHTML = "";
+    currentBadge.textContent = "No class";
+    currentClass.style.borderColor = "var(--color-border-light)";
+    currentClass.style.boxShadow = "none";
+    currentBadge.style.background = "rgba(255, 255, 255, 0.08)";
+    currentBadge.style.color = "var(--color-text-secondary)";
+    return;
+  }
+
+  editor.style.display = "flex";
+  currentBadge.textContent = selectedObject.class || "No class";
+
+  const color = classColors[selectedObject.class];
+  currentClass.style.borderColor = color || "var(--color-border-light)";
+  currentClass.style.boxShadow = color ? `inset 0 0 0 1px ${color}` : "none";
+  currentBadge.style.background = color || "rgba(255, 255, 255, 0.08)";
+  currentBadge.style.color = color ? getTextColor(color) : "var(--color-text-secondary)";
+
+  setClassOptions(select, selectedObject.class);
+  updateSelectedBoxChangeState(selectedObject.class);
 }
 
 window.addClass = function () {
@@ -175,6 +251,13 @@ window.addClass = function () {
 let images = [];
 let index = 0;
 let annotations = {};
+let annotationHistory = {};
+let annotationRedoHistory = {};
+const HISTORY_LIMIT = 100;
+let pendingHistoryTransaction = null;
+const AUTOSAVE_DEBOUNCE_MS = 800;
+let autoSaveTimer = null;
+let isSaveInProgress = false;
 
 let img = new Image();
 
@@ -236,6 +319,7 @@ window.setFilter = function(mode, el) {
   if (el) el.classList.add("active");
 
   const canvas = document.getElementById("canvas");
+  const canvasContainer = document.querySelector(".canvas-container");
   const wrapper = document.getElementById("gridWrapper");
   const sidebar = document.getElementById("bboxSidebar");
 
@@ -248,6 +332,7 @@ window.setFilter = function(mode, el) {
     updateImageCounter();
 
     canvas.style.display = "block";
+    canvasContainer.style.display = "flex";
     wrapper.style.display = "none";
 
     if (sidebar) sidebar.style.display = "block";
@@ -260,6 +345,7 @@ window.setFilter = function(mode, el) {
     renderGrid();
 
     canvas.style.display = "none";
+    canvasContainer.style.display = "none";
     wrapper.style.display = "flex";   // 🔥 CHỈ DÙNG WRAPPER
 
     if (sidebar) sidebar.style.display = "none";
@@ -283,6 +369,226 @@ function getCurrentObjects() {
 
   return annotations[currentImage];
 }
+
+function cloneAnnotationObjects(objects) {
+  return (objects || []).map(obj => ({
+    class: obj.class,
+    bbox: [...obj.bbox]
+  }));
+}
+
+function areAnnotationSnapshotsEqual(left, right) {
+  if (left.length !== right.length) return false;
+
+  for (let i = 0; i < left.length; i++) {
+    const a = left[i];
+    const b = right[i];
+
+    if (!a || !b || a.class !== b.class) return false;
+
+    for (let j = 0; j < a.bbox.length; j++) {
+      if (a.bbox[j] !== b.bbox[j]) return false;
+    }
+  }
+
+  return true;
+}
+
+function getAnnotationHistory(key = getKey()) {
+  if (!key) return [];
+
+  if (!annotationHistory[key]) {
+    annotationHistory[key] = [];
+  }
+
+  return annotationHistory[key];
+}
+
+function getAnnotationRedoHistory(key = getKey()) {
+  if (!key) return [];
+
+  if (!annotationRedoHistory[key]) {
+    annotationRedoHistory[key] = [];
+  }
+
+  return annotationRedoHistory[key];
+}
+
+function resetAnnotationHistory(key = getKey()) {
+  if (!key) return;
+  annotationHistory[key] = [];
+  annotationRedoHistory[key] = [];
+  updateHistoryButtons();
+}
+
+function pushUndoSnapshot(snapshot, key = getKey()) {
+  if (!key || !snapshot) return;
+
+  const stack = getAnnotationHistory(key);
+  const normalizedSnapshot = cloneAnnotationObjects(snapshot);
+  const lastSnapshot = stack[stack.length - 1];
+
+  if (lastSnapshot && areAnnotationSnapshotsEqual(lastSnapshot, normalizedSnapshot)) {
+    return;
+  }
+
+  stack.push(normalizedSnapshot);
+
+  if (stack.length > HISTORY_LIMIT) {
+    stack.shift();
+  }
+
+  const redoStack = getAnnotationRedoHistory(key);
+  redoStack.length = 0;
+
+  updateHistoryButtons();
+}
+
+function pushRedoSnapshot(snapshot, key = getKey()) {
+  if (!key || !snapshot) return;
+
+  const stack = getAnnotationRedoHistory(key);
+  const normalizedSnapshot = cloneAnnotationObjects(snapshot);
+  const lastSnapshot = stack[stack.length - 1];
+
+  if (lastSnapshot && areAnnotationSnapshotsEqual(lastSnapshot, normalizedSnapshot)) {
+    return;
+  }
+
+  stack.push(normalizedSnapshot);
+
+  if (stack.length > HISTORY_LIMIT) {
+    stack.shift();
+  }
+
+  updateHistoryButtons();
+}
+
+function beginHistoryTransaction() {
+  const key = getKey();
+  if (!key) return null;
+
+  return {
+    key,
+    snapshot: cloneAnnotationObjects(getCurrentObjects())
+  };
+}
+
+function commitHistoryTransaction(transaction) {
+  if (!transaction || transaction.key !== getKey()) return false;
+
+  const currentSnapshot = cloneAnnotationObjects(getCurrentObjects());
+  if (areAnnotationSnapshotsEqual(transaction.snapshot, currentSnapshot)) return false;
+
+  pushUndoSnapshot(transaction.snapshot, transaction.key);
+  return true;
+}
+
+function refreshAnnotationUI() {
+  const objects = getCurrentObjects();
+
+  if (selectedBoxIndex >= objects.length) selectedBoxIndex = -1;
+  if (hoveredBoxIndex >= objects.length) hoveredBoxIndex = -1;
+
+  updateImageMeta();
+  drawAll();
+  renderBBoxList();
+  updateHistoryButtons();
+
+  if (viewMode === "grid") renderGrid();
+}
+
+function updateHistoryButtons() {
+  const undoBtn = document.getElementById("undoBtn");
+  const redoBtn = document.getElementById("redoBtn");
+
+  if (!undoBtn && !redoBtn) return;
+
+  const key = getKey();
+  const undoCount = key ? getAnnotationHistory(key).length : 0;
+  const redoCount = key ? getAnnotationRedoHistory(key).length : 0;
+
+  if (undoBtn) undoBtn.disabled = undoCount === 0;
+  if (redoBtn) redoBtn.disabled = redoCount === 0;
+}
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+  }
+
+  autoSaveTimer = setTimeout(async () => {
+    autoSaveTimer = null;
+
+    if (!isDirty || isSaveInProgress) return;
+    if (!currentProject || !getKey()) return;
+
+    try {
+      await window.save();
+    } catch (err) {
+      console.error("Debounced autosave failed:", err);
+    }
+  }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+window.undoHistory = function () {
+  const key = getKey();
+  if (!key) return;
+
+  const undoStack = getAnnotationHistory(key);
+  if (!undoStack.length) return;
+
+  pushRedoSnapshot(getCurrentObjects(), key);
+
+  annotations[key] = cloneAnnotationObjects(undoStack.pop());
+  updateHistoryButtons();
+
+  drawing = false;
+  previewBox = null;
+  isDraggingBox = false;
+  isResizing = false;
+  resizeEdge = null;
+  resizeCorner = null;
+  pendingHistoryTransaction = null;
+
+  if (window.markDirty) window.markDirty();
+
+  refreshAnnotationUI();
+};
+
+window.redoHistory = function () {
+  const key = getKey();
+  if (!key) return;
+
+  const redoStack = getAnnotationRedoHistory(key);
+  if (!redoStack.length) return;
+
+  const currentSnapshot = cloneAnnotationObjects(getCurrentObjects());
+  const targetSnapshot = cloneAnnotationObjects(redoStack.pop());
+
+  const undoStack = getAnnotationHistory(key);
+  undoStack.push(currentSnapshot);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+
+  annotations[key] = targetSnapshot;
+  updateHistoryButtons();
+
+  drawing = false;
+  previewBox = null;
+  isDraggingBox = false;
+  isResizing = false;
+  resizeEdge = null;
+  resizeCorner = null;
+  pendingHistoryTransaction = null;
+
+  if (window.markDirty) window.markDirty();
+
+  refreshAnnotationUI();
+};
+
+window.redoLast = function () {
+  window.redoHistory();
+};
 
 function isInsideBox(x, y, box) {
   const [x1, y1, x2, y2] = box;
@@ -351,6 +657,8 @@ function loadImage() {
     offsetY = 0;
 
     selectedBoxIndex = -1;
+  pendingHistoryTransaction = null;
+    updateHistoryButtons();
 
     drawAll();
     loadAnnotations();
@@ -469,15 +777,17 @@ ctx.fillText(obj.class, dx + 3, dy - 3);
   };
   //renderBBoxList();
   // ===== CROSSHAIR =====
-if (mouseX !== null && mouseY !== null) {
+if (mouseCanvasX !== null && mouseCanvasY !== null) {
   ctx.save();
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   ctx.setLineDash([4, 4]);
   ctx.strokeStyle = "rgba(120,120,120,0.9)";
   ctx.lineWidth = 1.5;
 
-  const x = mouseX * displayScale;
-  const y = mouseY * displayScale;
+  const x = mouseCanvasX;
+  const y = mouseCanvasY;
 
   // vertical
   ctx.beginPath();
@@ -503,11 +813,24 @@ if (mouseX !== null && mouseY !== null) {
 }
 
 // ================= MOUSE =================
-function getMousePos(e) {
+function getCanvasMousePos(e) {
   const rect = canvas.getBoundingClientRect();
+  const borderX = canvas.clientLeft;
+  const borderY = canvas.clientTop;
+  const renderedWidth = canvas.clientWidth || canvas.width;
+  const renderedHeight = canvas.clientHeight || canvas.height;
+
   return {
-    x: ((e.clientX - rect.left) / displayScale - offsetX / displayScale) / scale,
-    y: ((e.clientY - rect.top) / displayScale - offsetY / displayScale) / scale
+    x: ((e.clientX - rect.left - borderX) * canvas.width) / renderedWidth,
+    y: ((e.clientY - rect.top - borderY) * canvas.height) / renderedHeight
+  };
+}
+
+function getMousePos(e) {
+  const point = getCanvasMousePos(e);
+  return {
+    x: (point.x - offsetX) / (scale * displayScale),
+    y: (point.y - offsetY) / (scale * displayScale)
   };
 }
 
@@ -544,6 +867,7 @@ canvas.onmousedown = (e) => {
   selectedBoxIndex = -1;
   hoveredBoxIndex = -1;
   drawAll();
+    renderBBoxList();
 
 }
 
@@ -559,6 +883,7 @@ canvas.onmousedown = (e) => {
     isResizing = true;
     resizeCorner = corner;
     resizeEdge = null;
+    pendingHistoryTransaction = beginHistoryTransaction();
   } else {
     const edge = getEdge(pos.x, pos.y, box);
 
@@ -566,14 +891,17 @@ canvas.onmousedown = (e) => {
       isResizing = true;
       resizeEdge = edge;
       resizeCorner = null;
+      pendingHistoryTransaction = beginHistoryTransaction();
     } else {
       isDraggingBox = true;
       dragOffsetX = pos.x - box[0];
       dragOffsetY = pos.y - box[1];
+      pendingHistoryTransaction = beginHistoryTransaction();
     }
   }
 
   drawAll();
+  renderBBoxList();
   return;
 }
 
@@ -586,11 +914,14 @@ canvas.onmousedown = (e) => {
 
 
 canvas.onmousemove = (e) => {
+  const canvasPoint = getCanvasMousePos(e);
   const pos = getMousePos(e);
 
   // 🔥 UPDATE CROSSHAIR
   mouseX = pos.x;
   mouseY = pos.y;
+  mouseCanvasX = canvasPoint.x;
+  mouseCanvasY = canvasPoint.y;
 
   if (isPanning) {
     offsetX += (e.clientX - lastX);
@@ -682,7 +1013,18 @@ canvas.onmousemove = (e) => {
   drawAll();
 };
 
+canvas.onmouseleave = () => {
+  mouseX = null;
+  mouseY = null;
+  mouseCanvasX = null;
+  mouseCanvasY = null;
+  drawAll();
+};
+
 canvas.onmouseup = (e) => {
+  const wasDraggingBox = isDraggingBox;
+  const wasResizing = isResizing;
+
   isDraggingBox = false;
   isResizing = false;
   resizeEdge = null;
@@ -691,6 +1033,16 @@ canvas.onmouseup = (e) => {
   if (isPanning) {
     isPanning = false;
     canvas.style.cursor = "crosshair";
+    pendingHistoryTransaction = null;
+    return;
+  }
+
+  if (wasDraggingBox || wasResizing) {
+    const didChange = commitHistoryTransaction(pendingHistoryTransaction);
+    pendingHistoryTransaction = null;
+
+    if (didChange && window.markDirty) window.markDirty();
+    refreshAnnotationUI();
     return;
   }
 
@@ -711,7 +1063,9 @@ canvas.onmouseup = (e) => {
   };
 
   const objects = getCurrentObjects();
+  const historyTransaction = beginHistoryTransaction();
   objects.push(newBox);
+  commitHistoryTransaction(historyTransaction);
 
   drawing = false;
   previewBox = null;
@@ -749,7 +1103,9 @@ window.deleteSelected = function () {
   const objects = getCurrentObjects();
 
   if (objects[selectedBoxIndex]) {
+    const historyTransaction = beginHistoryTransaction();
     objects.splice(selectedBoxIndex, 1);
+    commitHistoryTransaction(historyTransaction);
 
     if (window.markDirty) window.markDirty();
 
@@ -761,34 +1117,37 @@ window.deleteSelected = function () {
   }
 };
 
-window.changeClassSelected = function () {
+window.changeClassSelected = function (selectId = "classSelect") {
   if (selectedBoxIndex === -1) return;
 
-  const cls = document.getElementById("classSelect").value;
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const cls = select.value;
   const objects = getCurrentObjects();
 
-  if (objects[selectedBoxIndex]) {
+  if (objects[selectedBoxIndex] && cls && objects[selectedBoxIndex].class !== cls) {
+    const historyTransaction = beginHistoryTransaction();
     objects[selectedBoxIndex].class = cls;
+    commitHistoryTransaction(historyTransaction);
+    lastSelectedClass = cls;
+
+    updateImageMeta();
 
     if (window.markDirty) window.markDirty();
 
-    selectedBoxIndex = -1;
-    hoveredBoxIndex = -1;
-
     drawAll();
     renderBBoxList();
+
+    if (viewMode === "grid") renderGrid();
   }
 };
 
 window.markDirty = function () {
+  isDirty = true;
   window.isDirty = true;
-
-  const btn = document.querySelector('button[onclick="save()"]');
-  if (btn) {
-    btn.disabled = false;
-    btn.style.opacity = 1;
-  };
-
+  updateSaveButton();
+  scheduleAutoSave();
   console.log("DIRTY TRUE");
 };
 
@@ -804,8 +1163,6 @@ canvas.addEventListener("wheel", (e) => {
 // ================= SAVE =================
 window.save = async function () {
   const objects = getCurrentObjects();
-
-  if (!objects || !objects.length) return;
 
   const currentPath = getKey();
 
@@ -853,10 +1210,15 @@ window.createProject = async function () {
     currentProject = name;
     classes = [];
     annotations = {};
+    annotationHistory = {};
+    annotationRedoHistory = {};
     images = [];
     index = 0;
+    isDirty = false;
+    window.isDirty = false;
 
     renderClassSelect();
+    updateSaveButton();
 
     // ===== RELOAD DROPDOWN =====
     await loadProjects();
@@ -1041,6 +1403,8 @@ async function loadAnnotations() {
   });
 
   annotations[currentImage] = objects; // 🔥 KEY ỔN ĐỊNH
+  resetAnnotationHistory(currentImage);
+  pendingHistoryTransaction = null;
 
   updateImageMeta();
   drawAll();
@@ -1054,6 +1418,13 @@ window.loadProject = async function () {
   if (!project) return;
 
   currentProject = project;
+  annotations = {};
+  annotationHistory = {};
+  annotationRedoHistory = {};
+  pendingHistoryTransaction = null;
+  isDirty = false;
+  window.isDirty = false;
+  updateSaveButton();
 
   // 🔥 load classes từ backend
   const resClass = await fetch(`/classes?project=${project}`);
@@ -1099,11 +1470,7 @@ window.resetView = function () {
 };
 
 window.clearLast = function () {
-  const objects = getCurrentObjects();
-  if (!objects.length) return;
-
-  objects.pop();
-  drawAll();
+  window.undoHistory();
 };
 
 window.exportDataset = async function () {
@@ -1154,14 +1521,16 @@ window.exportDataset = async function () {
 
 // track thay đổi
 let isDirty = false;
+window.isDirty = false;
 
-// override add object để detect change
-window.markDirty();
+// init button state
+updateSaveButton();
 
 // override splice (delete)
 const originalSplice = Array.prototype.splice;
 Array.prototype.splice = function (...args) {
   isDirty = true;
+  window.isDirty = true;
   updateSaveButton();
   return originalSplice.apply(this, args);
 };
@@ -1187,6 +1556,7 @@ async function autoSaveIfNeeded() {
   console.log("Auto saving...");
   await save();
   isDirty = false;
+  window.isDirty = false;
   updateSaveButton();
 }
 
@@ -1208,14 +1578,20 @@ window.prevImage = async function () {
 const _save = window.save;
 window.save = async function () {
   const btn = document.querySelector('button[onclick="save()"]');
+  isSaveInProgress = true;
 
   btn.innerText = "Saving...";
   btn.disabled = true;
 
-  await _save();
+  try {
+    await _save();
+  } finally {
+    isSaveInProgress = false;
+  }
 
   btn.innerText = "Saved ✔";
   isDirty = false;
+  window.isDirty = false;
   updateSaveButton();
 
   setTimeout(() => {
@@ -1235,14 +1611,31 @@ if (classSelect) {
   });
 }
 
+const selectedBoxClassSelect = document.getElementById("selectedBoxClassSelect");
+if (selectedBoxClassSelect) {
+  selectedBoxClassSelect.addEventListener("change", () => {
+    updateSelectedBoxChangeState();
+  });
+}
+
 // ================= KEYBOARD SHORTCUT =================
 window.addEventListener("keydown", (e) => {
+  const tag = document.activeElement?.tagName?.toLowerCase();
+
   if (e.key === "Delete") {
     deleteSelected();
   }
 
   if (e.ctrlKey && e.key === "z") {
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    e.preventDefault();
     clearLast();
+  }
+
+  if ((e.ctrlKey && e.key === "y") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z")) {
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    e.preventDefault();
+    redoLast();
   }
 
   if (e.ctrlKey && e.key === "s") {
@@ -1254,6 +1647,7 @@ window.addEventListener("keydown", (e) => {
 // ================= INIT =================
 setTimeout(() => {
   updateSaveButton();
+  updateHistoryButtons();
 }, 500);
 
 // ================= HOTKEY NAVIGATION =================
@@ -1400,7 +1794,9 @@ function renderBBoxList() {
 
       // ===== CHANGE CLASS =====
       select.onchange = () => {
+        const historyTransaction = beginHistoryTransaction();
         obj.class = select.value;
+        commitHistoryTransaction(historyTransaction);
 
         updateImageMeta();
 
@@ -1428,7 +1824,9 @@ function renderBBoxList() {
     del.onclick = (e) => {
       e.stopPropagation();
 
+      const historyTransaction = beginHistoryTransaction();
       objects.splice(i, 1);
+      commitHistoryTransaction(historyTransaction);
 
       updateImageMeta();
 
@@ -1469,6 +1867,7 @@ function renderBBoxList() {
   });
 
   updateImageMeta();
+  updateSelectedBoxEditor();
 }
 
 function updateFilterCount() {
@@ -1516,6 +1915,7 @@ function renderGrid() {
       viewMode = "single";
 
       document.getElementById("canvas").style.display = "block";
+      document.querySelector(".canvas-container").style.display = "flex";
       document.getElementById("gridWrapper").style.display = "none";
       document.getElementById("bboxSidebar").style.display = "block";
 
@@ -1599,6 +1999,7 @@ if (!autoModelConfirmed) {
     const data = await response.json();
 
     const objects = getCurrentObjects();
+    const detections = data.detections || [];
 
     // ===== SET / MERGE CLASSES =====
     if (!classes || classes.length === 0) {
@@ -1613,12 +2014,14 @@ if (!autoModelConfirmed) {
     renderClassSelect();
 
     // ===== ADD DETECTIONS =====
-    (data.detections || []).forEach(det => {
+    const historyTransaction = detections.length ? beginHistoryTransaction() : null;
+    detections.forEach(det => {
       objects.push({
         class: det.class,
         bbox: det.bbox
       });
     });
+    commitHistoryTransaction(historyTransaction);
 
     // ===== UPDATE UI =====
     updateImageMeta();
