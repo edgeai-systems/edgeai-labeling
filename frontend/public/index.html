@@ -39,7 +39,8 @@
 
   <button class="btn-primary" onclick="save()">Save</button>
   <button onclick="resetView()">Reset</button>
-  <button onclick="clearLast()">Undo</button>
+  <button id="undoBtn" onclick="clearLast()">Undo</button>
+  <button id="redoBtn" onclick="redoLast()">Redo</button>
   <button onclick="exportDataset()">Export</button>
 </div>
 
@@ -55,13 +56,13 @@
 <div class="left-panel">
   <div class="panel-title">Classes</div>
 
-  <select id="classSelect"></select>
-  <input id="newClass" placeholder="New class..." />
-
-  <div class="class-actions">
-    <button onclick="addClass()">Add</button>
-    <button onclick="changeClassSelected()">Change</button>
-    <button class="btn-danger" onclick="deleteSelected()">Delete</button>
+  <div class="class-section">
+    <select id="classSelect"></select>
+    <input id="newClass" placeholder="New class..." />
+    <div class="class-actions">
+      <button onclick="addClass()">Add</button>
+      <button class="btn-danger" onclick="deleteSelected()">Delete</button>
+    </div>
   </div>
 
   <div class="filter-group">
@@ -98,6 +99,15 @@
 <!-- RIGHT -->
 <div id="bboxSidebar" class="right-panel">
   <div class="panel-title">BBoxes</div>
+  <div id="selectedBoxEditor" class="selected-box-editor" style="display:none;">
+    <div class="selected-box-title">Selected object</div>
+    <div id="selectedBoxCurrentClass" class="selected-box-current">
+      <span>Current class</span>
+      <span id="selectedBoxCurrentBadge" class="selected-box-badge">No class</span>
+    </div>
+    <select id="selectedBoxClassSelect"></select>
+    <button id="selectedBoxChangeBtn" class="btn-primary" style="display:none;" onclick="changeClassSelected('selectedBoxClassSelect')">Change</button>
+  </div>
   <div id="bboxList"></div>
 </div>
 
