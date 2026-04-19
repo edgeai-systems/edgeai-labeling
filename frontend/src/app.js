@@ -1621,27 +1621,83 @@ if (selectedBoxClassSelect) {
 // ================= KEYBOARD SHORTCUT =================
 window.addEventListener("keydown", (e) => {
   const tag = document.activeElement?.tagName?.toLowerCase();
+  const inInput = tag === "input" || tag === "textarea" || tag === "select";
 
-  if (e.key === "Delete") {
-    deleteSelected();
+  // ------- Cheatsheet -------
+  if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    e.preventDefault();
+    toggleHotkeyModal();
+    return;
   }
 
-  if (e.ctrlKey && e.key === "z") {
-    if (tag === "input" || tag === "textarea" || tag === "select") return;
+  // ------- Escape: deselect / close modal -------
+  if (e.key === "Escape") {
+    const modal = document.getElementById("hotkeyModal");
+    if (modal && modal.style.display !== "none") { closeHotkeyModal(); return; }
+    if (!inInput) {
+      selectedBoxIndex = -1;
+      drawAll();
+      renderBBoxList();
+      updateSelectedBoxEditor();
+    }
+    return;
+  }
+
+  if (inInput) return;
+
+  // ------- Delete -------
+  if (e.key === "Delete" || e.key === "Backspace") {
+    deleteSelected();
+    return;
+  }
+
+  // ------- Ctrl+Z -------
+  if (e.ctrlKey && !e.shiftKey && e.key === "z") {
     e.preventDefault();
     clearLast();
+    return;
   }
 
+  // ------- Ctrl+Y / Ctrl+Shift+Z -------
   if ((e.ctrlKey && e.key === "y") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z")) {
-    if (tag === "input" || tag === "textarea" || tag === "select") return;
     e.preventDefault();
     redoLast();
+    return;
   }
 
+  // ------- Ctrl+S -------
   if (e.ctrlKey && e.key === "s") {
     e.preventDefault();
     save();
+    return;
   }
+
+  // ------- Space: reset view -------
+  if (e.key === " ") {
+    e.preventDefault();
+    resetView();
+    return;
+  }
+
+  // ------- Tab / Shift+Tab: cycle boxes -------
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const objects = getCurrentObjects();
+    if (!objects.length) return;
+    if (e.shiftKey) {
+      selectedBoxIndex = selectedBoxIndex <= 0 ? objects.length - 1 : selectedBoxIndex - 1;
+    } else {
+      selectedBoxIndex = (selectedBoxIndex + 1) % objects.length;
+    }
+    drawAll();
+    renderBBoxList();
+    updateSelectedBoxEditor();
+    // scroll sidebar item into view
+    const items = document.querySelectorAll("#bboxList > div");
+    if (items[selectedBoxIndex]) items[selectedBoxIndex].scrollIntoView({ block: "nearest" });
+    return;
+  }
+
 });
 
 // ================= INIT =================
@@ -1650,28 +1706,36 @@ setTimeout(() => {
   updateHistoryButtons();
 }, 500);
 
-// ================= HOTKEY NAVIGATION =================
+// ================= NAVIGATION (Arrow keys) =================
 window.addEventListener("keydown", (e) => {
+  const tag = document.activeElement?.tagName?.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
 
-  // tránh bị trigger khi đang gõ input
-  const tag = document.activeElement.tagName.toLowerCase();
-  if (tag === "input" || tag === "textarea") return;
-
-  // ===== NEXT (→) =====
   if (e.key === "ArrowRight") {
     e.preventDefault();
     nextImage();
     updateImageCounter();
   }
 
-  // ===== PREV (←) =====
   if (e.key === "ArrowLeft") {
     e.preventDefault();
     prevImage();
     updateImageCounter();
   }
-
 });
+
+// ================= HOTKEY MODAL =================
+window.toggleHotkeyModal = function () {
+  const modal = document.getElementById("hotkeyModal");
+  if (!modal) return;
+  const isVisible = modal.style.display !== "none";
+  modal.style.display = isVisible ? "none" : "flex";
+};
+
+window.closeHotkeyModal = function () {
+  const modal = document.getElementById("hotkeyModal");
+  if (modal) modal.style.display = "none";
+};
 
 document.addEventListener("click", (e) => {
   // ✅ BỎ QUA TOÀN BỘ SELECT + OPTION
