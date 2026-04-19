@@ -36,6 +36,7 @@
   <select id="modelSelect"></select>
   <button onclick="uploadModel()">Upload Model</button>
   <button class="btn-primary" onclick="autoDetect()">Auto</button>
+  <button class="btn-secondary" onclick="autoBatch()">Auto Batch</button>
 
   <button class="btn-primary" onclick="save()">Save</button>
   <button onclick="resetView()">Reset</button>
@@ -132,6 +133,51 @@ style="
 "> </select>
 
 <script src="/static/src/app.js"></script>
+
+<!-- AUTO BATCH MODAL -->
+<div id="autoBatchModal" style="display:none;" class="hotkey-modal-overlay">
+  <div class="hotkey-modal" style="width:420px;">
+    <div class="hotkey-modal-header">
+      <span>⚡ Auto Batch Labeling</span>
+      <button class="hotkey-modal-close" id="autoBatchCloseBtn" onclick="closeAutoBatchModal()">✕</button>
+    </div>
+    <div class="hotkey-modal-body" id="autoBatchBody">
+
+      <!-- CONFIGURE STATE -->
+      <div id="autoBatchConfig">
+        <div class="batch-config-row">
+          <label>Batch</label>
+          <select id="autoBatchSelect">
+            <option value="all">All batches</option>
+          </select>
+        </div>
+        <div class="batch-config-row">
+          <label>Skip labeled images</label>
+          <input type="checkbox" id="autoBatchSkip" checked style="width:auto;accent-color:var(--color-primary);" />
+        </div>
+        <button class="btn-primary" style="width:100%;margin-top:8px;" onclick="startAutoBatch()">Run Auto Label</button>
+      </div>
+
+      <!-- RUNNING STATE -->
+      <div id="autoBatchRunning" style="display:none;">
+        <div class="batch-progress-label" id="autoBatchProgressLabel">Starting...</div>
+        <div class="batch-progress-bar-track">
+          <div class="batch-progress-bar-fill" id="autoBatchProgressBar" style="width:0%"></div>
+        </div>
+        <div class="batch-progress-sub" id="autoBatchProgressSub"></div>
+      </div>
+
+      <!-- DONE STATE -->
+      <div id="autoBatchDone" style="display:none;">
+        <div class="batch-done-icon">✅</div>
+        <div class="batch-done-title">Done!</div>
+        <div id="autoBatchSummary" class="batch-done-summary"></div>
+        <button class="btn-primary" style="width:100%;margin-top:12px;" onclick="closeAutoBatchModal()">Close</button>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <!-- HOTKEY MODAL -->
 <div id="hotkeyModal" style="display:none;" class="hotkey-modal-overlay" onclick="if(event.target===this)closeHotkeyModal()">

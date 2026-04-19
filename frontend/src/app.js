@@ -2143,6 +2143,114 @@ window.uploadModel = async function () {
   };
 };
 
+// ================= AUTO BATCH =================
+window.autoBatch = function () {
+  const modal = document.getElementById("autoBatchModal");
+
+  // populate batch dropdown with current project's batches
+  const batchSel = document.getElementById("autoBatchSelect");
+  batchSel.innerHTML = '<option value="all">All batches</option>';
+  const src = document.getElementById("batchSelect");
+  if (src) {
+    Array.from(src.options).forEach(opt => {
+      if (opt.value !== "all") {
+        const o = document.createElement("option");
+        o.value = opt.value;
+        o.textContent = opt.textContent;
+        batchSel.appendChild(o);
+      }
+    });
+  }
+  // pre-select current batch
+  if (typeof selectedBatch !== "undefined" && selectedBatch !== "all") {
+    batchSel.value = selectedBatch;
+  }
+
+  // reset to config state
+  document.getElementById("autoBatchConfig").style.display = "";
+  document.getElementById("autoBatchRunning").style.display = "none";
+  document.getElementById("autoBatchDone").style.display = "none";
+  document.getElementById("autoBatchCloseBtn").style.display = "";
+
+  modal.style.display = "flex";
+};
+
+window.closeAutoBatchModal = function () {
+  document.getElementById("autoBatchModal").style.display = "none";
+};
+
+window.startAutoBatch = async function () {
+  const project = currentProject;
+  if (!project) { alert("Chưa chọn project"); return; }
+
+  const model = document.getElementById("modelSelect").value;
+  if (!model) { alert("Chưa chọn model"); return; }
+
+  const batch = document.getElementById("autoBatchSelect").value;
+  const skipLabeled = document.getElementById("autoBatchSkip").checked;
+
+  // switch to running state
+  document.getElementById("autoBatchConfig").style.display = "none";
+  document.getElementById("autoBatchRunning").style.display = "";
+  document.getElementById("autoBatchDone").style.display = "none";
+  document.getElementById("autoBatchCloseBtn").style.display = "none";
+
+  const label = document.getElementById("autoBatchProgressLabel");
+  const bar   = document.getElementById("autoBatchProgressBar");
+  const sub   = document.getElementById("autoBatchProgressSub");
+
+  label.textContent = "Running YOLO on images...";
+  bar.style.width = "0%";
+  sub.textContent = `Model: ${model} | Batch: ${batch === "all" ? "All" : batch}`;
+
+  // animate indeterminate bar while waiting
+  bar.classList.add("batch-progress-indeterminate");
+
+  try {
+    const res = await fetch("/auto_detect_batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project, model, batch, skip_labeled: skipLabeled })
+    });
+
+    const data = await res.json();
+
+    bar.classList.remove("batch-progress-indeterminate");
+    bar.style.width = "100%";
+
+    if (data.status === "error") {
+      label.textContent = "Error: " + data.msg;
+      document.getElementById("autoBatchCloseBtn").style.display = "";
+      return;
+    }
+
+    // update classes
+    if (data.classes && data.classes.length > 0) {
+      data.classes.forEach(c => {
+        if (!classes.includes(c)) classes.push(c);
+      });
+      renderClassSelect();
+    }
+
+    // show done state
+    document.getElementById("autoBatchRunning").style.display = "none";
+    document.getElementById("autoBatchDone").style.display = "";
+    document.getElementById("autoBatchSummary").innerHTML =
+      `<strong>${data.processed}</strong> images labeled` +
+      (data.skipped > 0 ? ` &nbsp;·&nbsp; <span style="opacity:.7">${data.skipped} skipped</span>` : "") +
+      ` &nbsp;·&nbsp; <span style="opacity:.7">${data.total} total</span>`;
+
+    // refresh image labeled status
+    loadImagesFromProject();
+
+  } catch (err) {
+    bar.classList.remove("batch-progress-indeterminate");
+    console.error("Auto batch error:", err);
+    label.textContent = "Error — check console";
+    document.getElementById("autoBatchCloseBtn").style.display = "";
+  }
+};
+
 // ================= INIT =================
 renderClassSelect();
 loadProjectList();
