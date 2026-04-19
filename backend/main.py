@@ -441,3 +441,108 @@ async def auto_detect(
         "detections": detections,
         "classes": names
     }
+
+
+# ================= AUTO DETECT BATCH =================
+class AutoBatchRequest(BaseModel):
+    project: str
+    model: str
+    batch: str = "all"
+    skip_labeled: bool = True
+
+@app.post("/auto_detect_batch")
+async def auto_detect_batch(data: AutoBatchRequest):
+    project_path = os.path.join(BASE_DIR, data.project)
+    if not os.path.exists(project_path):
+        return {"status": "error", "msg": "Project not found"}
+
+    label_dir = os.path.join(project_path, "labels")
+    os.makedirs(label_dir, exist_ok=True)
+
+    yolo = get_model(data.model)
+    names = yolo.names
+    if isinstance(names, dict):
+        names = [names[i] for i in sorted(names.keys())]
+
+    # ===== THU THẬP ẢNH =====
+    image_paths = []
+    for root, _, files in os.walk(project_path):
+        if data.batch != "all":
+            if data.batch not in root:
+                continue
+        if "images" not in root:
+            continue
+        for f in files:
+            if f.lower().endswith((".jpg", ".jpeg", ".png")):
+                image_paths.append(os.path.join(root, f))
+
+    processed = 0
+    skipped = 0
+    total = len(image_paths)
+
+    # ===== LOAD CLASSES HIỆN TẠI =====
+    class_file = os.path.join(project_path, "classes.json")
+    if os.path.exists(class_file):
+        with open(class_file, "r") as f:
+            existing_classes = json.load(f)
+    else:
+        existing_classes = []
+
+    for c in names:
+        if c not in existing_classes:
+            existing_classes.append(c)
+
+    # ===== XỬ LÝ TỪNG ẢNH =====
+    for img_path in image_paths:
+        filename = os.path.splitext(os.path.basename(img_path))[0]
+        label_path = os.path.join(label_dir, filename + ".txt")
+
+        if data.skip_labeled and os.path.exists(label_path):
+            if os.path.getsize(label_path) > 0:
+                skipped += 1
+                continue
+
+        img = cv2.imread(img_path)
+        if img is None:
+            skipped += 1
+            continue
+
+        h, w = img.shape[:2]
+        results = yolo(img)[0]
+
+        lines = []
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+            x_min, x_max = min(x1, x2), max(x1, x2)
+            y_min, y_max = min(y1, y2), max(y1, y2)
+
+            xc = ((x_min + x_max) / 2) / w
+            yc = ((y_min + y_max) / 2) / h
+            bw = (x_max - x_min) / w
+            bh = (y_max - y_min) / h
+
+            if bw <= 0 or bh <= 0:
+                continue
+
+            cls_name = names[cls_id] if cls_id < len(names) else str(cls_id)
+            mapped_id = existing_classes.index(cls_name) if cls_name in existing_classes else cls_id
+            lines.append(f"{mapped_id} {xc:.6f} {yc:.6f} {bw:.6f} {bh:.6f}")
+
+        with open(label_path, "w") as f:
+            f.write("\n".join(lines))
+
+        processed += 1
+
+    # ===== LƯU CLASSES =====
+    with open(class_file, "w") as f:
+        json.dump(existing_classes, f)
+
+    return {
+        "status": "ok",
+        "total": total,
+        "processed": processed,
+        "skipped": skipped,
+        "classes": existing_classes
+    }
