@@ -42,6 +42,7 @@
   <button id="undoBtn" onclick="clearLast()">Undo</button>
   <button id="redoBtn" onclick="redoLast()">Redo</button>
   <button onclick="exportDataset()">Export</button>
+  <button class="btn-hotkey-help" onclick="toggleHotkeyModal()" title="Hotkeys (?)">?</button>
 </div>
 
 
@@ -131,6 +132,37 @@ style="
 "> </select>
 
 <script src="/static/src/app.js"></script>
+
+<!-- HOTKEY MODAL -->
+<div id="hotkeyModal" style="display:none;" class="hotkey-modal-overlay" onclick="if(event.target===this)closeHotkeyModal()">
+  <div class="hotkey-modal">
+    <div class="hotkey-modal-header">
+      <span>Keyboard Shortcuts</span>
+      <button class="hotkey-modal-close" onclick="closeHotkeyModal()">✕</button>
+    </div>
+    <div class="hotkey-modal-body">
+      <div class="hotkey-group">
+        <div class="hotkey-group-title">Navigation</div>
+        <div class="hotkey-row"><kbd>←</kbd><kbd>→</kbd><span>Previous / Next image</span></div>
+        <div class="hotkey-row"><kbd>Tab</kbd><span>Next bbox</span></div>
+        <div class="hotkey-row"><kbd>Shift</kbd><kbd>Tab</kbd><span>Previous bbox</span></div>
+      </div>
+      <div class="hotkey-group">
+        <div class="hotkey-group-title">Edit</div>
+        <div class="hotkey-row"><kbd>Del</kbd><span>Delete selected bbox</span></div>
+        <div class="hotkey-row"><kbd>Ctrl</kbd><kbd>Z</kbd><span>Undo</span></div>
+        <div class="hotkey-row"><kbd>Ctrl</kbd><kbd>Y</kbd><span>Redo</span></div>
+      </div>
+      <div class="hotkey-group">
+        <div class="hotkey-group-title">View & File</div>
+        <div class="hotkey-row"><kbd>Space</kbd><span>Reset view</span></div>
+        <div class="hotkey-row"><kbd>Ctrl</kbd><kbd>S</kbd><span>Save</span></div>
+        <div class="hotkey-row"><kbd>Esc</kbd><span>Deselect bbox</span></div>
+        <div class="hotkey-row"><kbd>?</kbd><span>Show this panel</span></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
